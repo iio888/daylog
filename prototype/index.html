@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DayLog · 原型 v0.1</title>
+<style>
+  :root {
+    --accent: #4F6EF7;
+    --radius: 10px;
+    --fs: 14px;
+    --pad: 1;            /* 密度系数 */
+    --bg: #f7f8fa;
+    --bg-card: #ffffff;
+    --text: #1c1f26;
+    --text-dim: #8a8f9c;
+    --border: #e4e7ee;
+    --hover: #f0f2f7;
+    --shadow: 0 1px 3px rgba(20,24,40,.06), 0 4px 16px rgba(20,24,40,.05);
+  }
+  body[data-theme="dark"] {
+    --bg: #15171c;
+    --bg-card: #1e2128;
+    --text: #e8eaf0;
+    --text-dim: #7d828f;
+    --border: #2c3039;
+    --hover: #262a33;
+    --shadow: 0 1px 3px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: var(--fs);
+    background: var(--bg); color: var(--text);
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    transition: background .2s, color .2s;
+  }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  input, select, textarea { font: inherit; color: var(--text); }
+
+  /* ---------- 顶部导航 ---------- */
+  nav {
+    height: 48px; flex-shrink: 0; display: flex; align-items: center;
+    padding: 0 calc(20px * var(--pad)); gap: 4px;
+    background: var(--bg-card); border-bottom: 1px solid var(--border);
+  }
+  .logo { font-weight: 700; font-size: 15px; margin-right: 24px; letter-spacing: .3px; }
+  .logo b { color: var(--accent); }
+  .nav-tab {
+    padding: calc(7px * var(--pad)) calc(14px * var(--pad));
+    border-radius: calc(var(--radius) * .7); color: var(--text-dim); font-size: var(--fs);
+  }
+  .nav-tab:hover { background: var(--hover); color: var(--text); }
+  .nav-tab.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); font-weight: 600; }
+  .nav-right { margin-left: auto; display:flex; align-items:center; gap:8px; }
+  .icon-btn { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--text-dim); font-size:16px; }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
+
+  main { flex:1; overflow:auto; }
+  .page { display:none; height:100%; }
+  .page.active { display:block; }
+
+  /* ---------- 记录页 ---------- */
+  #page-write { overflow:auto; }
+  .write-wrap { max-width: 760px; margin: 0 auto; padding: calc(36px * var(--pad)) 24px 60px; }
+  .editor {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); position: relative;
+    transition: border-color .15s;
+  }
+  .editor:focus-within { border-color: var(--accent); }
+  .editor textarea {
+    width: 100%; min-height: 110px; padding: calc(16px * var(--pad)); border: none; outline: none;
+    background: transparent; resize: vertical; line-height: 1.7;
+  }
+  .editor-bar { display:flex; align-items:center; padding: 8px calc(12px * var(--pad)); border-top:1px solid var(--border); gap:8px; }
+  .hint { color: var(--text-dim); font-size: calc(var(--fs) - 2px); }
+  .editor-bar .spacer { flex:1; }
+  .btn-ghost {
+    padding: 5px 12px; border-radius: calc(var(--radius) * .7); color: var(--text-dim);
+    border: 1px solid var(--border); font-size: calc(var(--fs) - 1px);
+  }
+  .btn-ghost:hover { background: var(--hover); color: var(--text); }
+  .btn-primary {
+    padding: 6px 18px; border-radius: calc(var(--radius) * .7);
+    background: var(--accent); color: #fff; font-weight: 600; font-size: var(--fs);
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .day-head { margin: calc(34px * var(--pad)) 0 10px; display:flex; align-items:baseline; gap:10px; }
+  .day-head h3 { font-size: var(--fs); font-weight: 600; }
+  .day-head span { color: var(--text-dim); font-size: calc(var(--fs) - 2px); }
+  .entry {
+    display:flex; gap:14px; padding: calc(12px * var(--pad)) calc(14px * var(--pad));
+    background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 8px; position: relative; align-items: baseline;
+  }
+  .entry time { color: var(--text-dim); font-size: calc(var(--fs) - 2px); flex-shrink:0; font-variant-numeric: tabular-nums; }
+  .entry .txt { line-height:1.65; white-space: pre-wrap; word-break: break-word; flex: 1; }
+  .entry .ops { position:absolute; right:10px; top:8px; display:none; gap:4px; }
+  .entry:hover .ops { display:flex; }
+  .op { font-size: 12px; color: var(--text-dim); padding: 3px 8px; border-radius:6px; background: var(--hover); }
+  .op:hover { color: var(--accent); }
+  .op.del:hover { color: #e5484d; }
+  .entry textarea.inline {
+    flex:1; border:1px solid var(--accent); border-radius:6px; padding:8px; background:transparent; outline:none; line-height:1.6;
+  }
+
+  /* ---------- 回顾页（月历） ---------- */
+  #page-review { display:none; flex-direction: column; }
+  #page-review.active { display:flex; }
+  .cal-toolbar {
+    display:flex; align-items:center; gap:8px; padding: calc(12px * var(--pad)) calc(20px * var(--pad));
+    flex-wrap: wrap;
+  }
+  .cal-toolbar select, .cal-toolbar input {
+    background: var(--bg-card); border:1px solid var(--border); border-radius: calc(var(--radius)*.7);
+    padding: 5px 10px; outline:none; font-size: calc(var(--fs) - 1px);
+  }
+  .cal-toolbar input:focus { border-color: var(--accent); }
+  .cal-toolbar .grow { flex:1; }
+  .cal-grid {
+    flex:1; display:grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(0, 1fr);
+    gap: 6px; padding: 0 calc(20px * var(--pad)) calc(16px * var(--pad)); min-height: 0;
+  }
+  .dow { text-align:center; color: var(--text-dim); font-size: calc(var(--fs) - 2px); padding: 2px 0 6px; }
+  .cal-grid .dow { grid-auto-rows: auto; }
+  .cell {
+    background: var(--bg-card); border:1px solid var(--border); border-radius: calc(var(--radius)*.8);
+    padding: 6px 8px; overflow:hidden; display:flex; flex-direction:column; gap:3px; cursor:pointer;
+    min-height: 0; transition: border-color .12s;
+  }
+  .cell:hover { border-color: var(--accent); }
+  .cell.dim { opacity:.38; cursor: default; background: transparent; }
+  .cell.dim:hover { border-color: var(--border); }
+  .cell.today { border: 2px solid var(--accent); }
+  .cell .d { font-size: calc(var(--fs) - 2px); color: var(--text-dim); font-weight:600; }
+  .cell.today .d { color: var(--accent); }
+  .cell .e {
+    font-size: calc(var(--fs) - 2px); line-height:1.45; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .cell .e time { color: var(--text-dim); margin-right:4px; font-variant-numeric: tabular-nums; }
+  .cell .more { font-size: 11px; color: var(--accent); }
+
+  /* 当日详情侧滑面板 */
+  .panel-mask { position:fixed; inset:0; background:rgba(0,0,0,.25); opacity:0; pointer-events:none; transition:opacity .18s; z-index:40; }
+  .panel-mask.show { opacity:1; pointer-events:auto; }
+  .day-panel {
+    position:fixed; top:0; right:-420px; width:400px; max-width:92vw; height:100%;
+    background: var(--bg-card); border-left:1px solid var(--border); z-index:41;
+    transition:right .2s ease; display:flex; flex-direction:column; box-shadow: var(--shadow);
+  }
+  .day-panel.show { right:0; }
+  .day-panel header { padding: calc(16px * var(--pad)) calc(18px * var(--pad)); border-bottom:1px solid var(--border); display:flex; align-items:center; }
+  .day-panel header h3 { font-size: 15px; flex:1; }
+  .day-panel .list { flex:1; overflow:auto; padding: calc(14px * var(--pad)) calc(18px * var(--pad)); }
+  .day-panel .addbox { border-top:1px solid var(--border); padding: calc(12px * var(--pad)) calc(18px * var(--pad)); }
+  .day-panel .addbox textarea {
+    width:100%; min-height:60px; background:var(--bg); border:1px solid var(--border); border-radius:calc(var(--radius)*.7);
+    padding:10px; outline:none; resize:none; line-height:1.6;
+  }
+  .day-panel .addbox textarea:focus { border-color: var(--accent); }
+  .empty { color: var(--text-dim); text-align:center; padding: 40px 0; font-size: calc(var(--fs) - 1px); }
+
+  /* 搜索结果扁平列表 */
+  #search-result { flex:1; overflow:auto; padding: 0 calc(20px * var(--pad)) 20px; display:none; }
+  #search-result.show { display:block; }
+  .sr-day { color: var(--text-dim); font-size: calc(var(--fs) - 2px); margin: 16px 0 6px; }
+
+  /* ---------- 报告页 ---------- */
+  #page-report { display:none; }
+  #page-report.active { display:flex; }
+  .report-side {
+    width: 280px; flex-shrink:0; border-right:1px solid var(--border); padding: calc(20px * var(--pad));
+    display:flex; flex-direction:column; gap: calc(16px * var(--pad)); overflow:auto; background: var(--bg-card);
+  }
+  .field label { display:block; font-size: calc(var(--fs) - 2px); color: var(--text-dim); margin-bottom:6px; font-weight:600; }
+  .field select, .field input {
+    width:100%; background: var(--bg); border:1px solid var(--border); border-radius: calc(var(--radius)*.7);
+    padding: 7px 10px; outline:none;
+  }
+  .field select:focus, .field input:focus { border-color: var(--accent); }
+  .seg { display:flex; border:1px solid var(--border); border-radius: calc(var(--radius)*.7); overflow:hidden; }
+  .seg button { flex:1; padding:7px 0; font-size: calc(var(--fs) - 1px); color: var(--text-dim); }
+  .seg button.on { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-weight:600; }
+  .seg button:disabled { opacity:.45; cursor:not-allowed; }
+  .note { font-size: 11px; color: var(--text-dim); margin-top: 5px; line-height: 1.5; }
+  .report-main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .preview-tabs { display:flex; gap:4px; padding: calc(12px * var(--pad)) calc(20px * var(--pad)) 0; }
+  .ptab { padding:5px 14px; border-radius: calc(var(--radius)*.7) calc(var(--radius)*.7) 0 0; color:var(--text-dim); font-size: calc(var(--fs) - 1px); }
+  .ptab.on { background: var(--bg-card); border:1px solid var(--border); border-bottom-color: var(--bg-card); color: var(--text); }
+  .preview-body {
+    flex:1; margin: -1px calc(20px * var(--pad)) 0; background: var(--bg-card);
+    border:1px solid var(--border); border-radius: var(--radius); overflow:auto; padding: calc(26px * var(--pad)) calc(30px * var(--pad));
+  }
+  .preview-body h1 { font-size: 20px; margin-bottom: 14px; }
+  .preview-body h2 { font-size: 16px; margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .preview-body li { margin: 5px 0 5px 20px; line-height: 1.7; }
+  .preview-body p { line-height: 1.7; margin: 6px 0; color: var(--text); }
+  .preview-body .muted { color: var(--text-dim); }
+  .preview-body textarea {
+    width:100%; height:100%; border:none; outline:none; background:transparent; resize:none; line-height:1.7;
+    font-family: ui-monospace, Consolas, monospace; font-size: calc(var(--fs) - 1px);
+  }
+  .report-actions { display:flex; gap:8px; padding: calc(12px * var(--pad)) calc(20px * var(--pad)) calc(16px * var(--pad)); }
+
+  /* ---------- 设置弹窗 ---------- */
+  .modal-mask { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:50; }
+  .modal-mask.show { display:flex; }
+  .modal {
+    width: 460px; max-width:92vw; max-height:80vh; overflow:auto; background:var(--bg-card);
+    border-radius: var(--radius); border:1px solid var(--border); box-shadow: var(--shadow); padding: calc(22px * var(--pad));
+  }
+  .modal h2 { font-size:16px; margin-bottom:16px; }
+  .modal h4 { font-size: calc(var(--fs) - 1px); margin:16px 0 8px; color: var(--text-dim); font-weight:600; }
+  .modal .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .modal .row input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:calc(var(--radius)*.7); padding:7px 10px; outline:none; }
+
+  /* ---------- 原型调节面板 ---------- */
+  #tweak {
+    position:fixed; right:16px; bottom:16px; z-index:60; width: 252px;
+    background: var(--bg-card); border:1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+    font-size: 12px; overflow:hidden;
+  }
+  #tweak .head { display:flex; align-items:center; padding:10px 12px; cursor:pointer; font-weight:600; }
+  #tweak .head .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); margin-right:8px; }
+  #tweak .body { padding: 0 12px 12px; display:none; }
+  #tweak.open .body { display:block; }
+  #tweak .trow { margin-top:10px; }
+  #tweak .trow > span { display:block; color:var(--text-dim); margin-bottom:5px; }
+  .swatches { display:flex; gap:6px; }
+  .sw { width:22px; height:22px; border-radius:50%; cursor:pointer; border:2px solid transparent; }
+  .sw.on { border-color: var(--text); }
+  #tweak input[type=range] { width:100%; accent-color: var(--accent); }
+  #tweak .seg { margin-top:0; }
+  #tweak code { display:block; margin-top:10px; padding:8px; background:var(--bg); border-radius:8px; color:var(--text-dim); line-height:1.6; word-break:break-all; }
+
+  /* ---------- #/@ 自动补全 ---------- */
+  .ac {
+    position:absolute; z-index:35; min-width:150px; overflow:hidden;
+    background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow);
+  }
+  .ac div { padding:6px 12px; cursor:pointer; font-size:calc(var(--fs) - 1px); }
+  .ac div .n { color:var(--text-dim); font-size:11px; margin-left:8px; }
+  .ac div.sel, .ac div:hover { background:var(--hover); color:var(--accent); }
+
+  /* ---------- 拆分确认弹窗 ---------- */
+  .modal.wide { width: 820px; }
+  .split-cols { display:flex; gap:14px; margin-top:4px; }
+  .split-src { flex:1; min-width:0; }
+  .split-src textarea {
+    width:100%; height:320px; background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    padding:10px; outline:none; resize:none; line-height:1.7; color:var(--text-dim); font-size:calc(var(--fs) - 1px);
+  }
+  .split-items { flex:1.25; max-height:320px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
+  .sp-item { border:1px solid var(--border); border-radius:8px; padding:8px; display:flex; gap:8px; align-items:flex-start; }
+  .sp-item.warn { border-color:#F59E0B; background: color-mix(in srgb, #F59E0B 7%, transparent); }
+  .sp-item input[type=date] {
+    background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:4px 6px; outline:none; font-size:12px;
+  }
+  .sp-item textarea {
+    flex:1; background:transparent; border:none; outline:none; resize:none; overflow:hidden;
+    line-height:1.55; font-size:calc(var(--fs) - 1px); min-height:1.6em;
+  }
+  .sp-item .rm { color:var(--text-dim); padding:2px 6px; border-radius:6px; }
+  .sp-item .rm:hover { color:#e5484d; background:var(--hover); }
+  .split-foot { display:flex; justify-content:space-between; align-items:center; margin-top:14px; }
+
+  /* toast */
+  #toast {
+    position:fixed; left:50%; bottom:36px; transform:translateX(-50%) translateY(20px); z-index:70;
+    background: var(--text); color: var(--bg); padding: 8px 18px; border-radius: 99px; font-size:13px;
+    opacity:0; transition: all .2s; pointer-events:none;
+  }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body data-theme="light">
+
+<nav>
+  <div class="logo">Day<b>Log</b></div>
+  <button class="nav-tab active" data-page="write">记录</button>
+  <button class="nav-tab" data-page="review">回顾</button>
+  <button class="nav-tab" data-page="report">报告</button>
+  <div class="nav-right">
+    <button class="icon-btn" id="btn-settings" title="设置">⚙</button>
+  </div>
+</nav>
+
+<main>
+  <!-- 记录页 -->
+  <section class="page active" id="page-write">
+    <div class="write-wrap">
+      <div class="editor">
+        <textarea id="input" placeholder="这会儿做了什么？随便写…"></textarea>
+        <div class="editor-bar">
+          <span class="hint">Ctrl+Enter 保存 · 键入 # 或 @ 自动补全</span>
+          <div class="spacer"></div>
+          <button class="btn-ghost" id="btn-split" title="一次性输入多天内容，由 AI 按日期拆分后确认导入">AI 拆分多日…</button>
+          <button class="btn-ghost" id="btn-date">今天 ▾</button>
+          <button class="btn-primary" id="btn-save">保存</button>
+        </div>
+      </div>
+      <div class="day-head"><h3>今天</h3><span id="today-count"></span></div>
+      <div id="today-list"></div>
+    </div>
+  </section>
+
+  <!-- 回顾页（月历） -->
+  <section class="page" id="page-review">
+    <div class="cal-toolbar">
+      <button class="btn-ghost" id="prev-m">◀</button>
+      <select id="sel-year"></select>
+      <select id="sel-month"></select>
+      <button class="btn-ghost" id="next-m">▶</button>
+      <button class="btn-ghost" id="btn-today">回到今天</button>
+      <div class="grow"></div>
+      <input id="search" placeholder="搜索记录…" style="width:180px">
+      <select id="tag-filter"><option value="">全部标签</option></select>
+    </div>
+    <div class="cal-grid" id="cal"></div>
+    <div id="search-result"></div>
+  </section>
+
+  <!-- 报告页 -->
+  <section class="page" id="page-report">
+    <aside class="report-side">
+      <div class="field">
+        <label>报告类型</label>
+        <select id="rpt-type">
+          <option>日报</option><option selected>周报</option><option>季度总结</option><option>年度总结</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>时间范围</label>
+        <div id="range-ctl" style="display:flex;gap:6px"></div>
+        <div class="note" id="range-label"></div>
+      </div>
+      <div class="field">
+        <label>模板</label>
+        <select>
+          <option selected>内置 · 周报</option><option>周报-汇报版（已导入）</option><option>导入模板…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>生成方式</label>
+        <div class="seg" id="gen-mode">
+          <button class="on">直接整理</button>
+          <button disabled title="未配置 AI 提供方（支持 Claude API 或本地模型）">AI 总结</button>
+        </div>
+        <div class="note">AI 总结需在设置中配置 AI 提供方（Claude API 或本地模型，后者完全离线可用）；未配置时核心功能不受影响。</div>
+      </div>
+      <button class="btn-primary" id="btn-gen" style="margin-top:4px">生成报告</button>
+    </aside>
+    <div class="report-main">
+      <div class="preview-tabs">
+        <button class="ptab on" data-pt="render">预览</button>
+        <button class="ptab" data-pt="src">Markdown 源</button>
+      </div>
+      <div class="preview-body" id="preview"></div>
+      <div class="report-actions">
+        <button class="btn-ghost t">复制 Markdown</button>
+        <button class="btn-ghost t">复制纯文本</button>
+        <button class="btn-ghost t">导出 .md</button>
+        <button class="btn-ghost t">导出 .html</button>
+        <button class="btn-ghost t">导出 PDF</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 当日详情侧滑 -->
+<div class="panel-mask" id="panel-mask"></div>
+<aside class="day-panel" id="day-panel">
+  <header><h3 id="panel-title"></h3><button class="icon-btn" id="panel-close">✕</button></header>
+  <div class="list" id="panel-list"></div>
+  <div class="addbox">
+    <textarea id="panel-add" placeholder="补记这一天…（Ctrl+Enter 保存）"></textarea>
+  </div>
+</aside>
+
+<!-- 设置弹窗 -->
+<div class="modal-mask" id="settings-mask">
+  <div class="modal">
+    <h2>设置</h2>
+    <h4>AI 提供方（可选 · 用于 AI 总结与多日拆分）</h4>
+    <div class="seg" id="ai-provider" style="margin-bottom:8px">
+      <button class="on" data-p="claude">Claude API</button>
+      <button data-p="local">本地模型</button>
+    </div>
+    <div id="ai-claude">
+      <div class="row"><input type="password" placeholder="Anthropic API Key（仅存本机）"></div>
+      <div class="row"><input value="claude-sonnet-4-6"><button class="btn-ghost t">测试连接</button></div>
+      <div class="row hint">云端方式，需联网；首次使用会提示数据将发送至 Anthropic</div>
+    </div>
+    <div id="ai-local" style="display:none">
+      <div class="row"><input value="http://localhost:11434/v1" placeholder="Base URL"></div>
+      <div class="row"><input placeholder="模型名，如 qwen3:14b"><button class="btn-ghost t">测试连接</button></div>
+      <div class="row hint">OpenAI 兼容接口（Ollama / LM Studio / vLLM），数据不出本机，完全离线可用</div>
+    </div>
+    <h4>模板</h4>
+    <div class="row"><button class="btn-ghost t">打开模板文件夹</button><button class="btn-ghost t">恢复内置模板</button></div>
+    <h4>数据</h4>
+    <div class="row"><button class="btn-ghost t">打开数据文件夹</button><button class="btn-ghost t">导出全部 JSON</button><button class="btn-ghost t">导入 JSON</button></div>
+    <h4>关于</h4>
+    <div class="row hint">DayLog v0.1 原型 · 本地优先，无遥测</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn-primary" id="settings-close">关闭</button></div>
+  </div>
+</div>
+
+<!-- 原型调节面板（风格已定稿，隐藏保留；需要时把 display:none 去掉即可） -->
+<div id="tweak" class="open" style="display:none">
+  <div class="head" id="tweak-head"><span class="dot"></span>原型风格调节<span style="margin-left:auto;color:var(--text-dim)">▾</span></div>
+  <div class="body">
+    <div class="trow"><span>主题</span>
+      <div class="seg">
+        <button class="on" data-th="light">浅色</button>
+        <button data-th="dark">深色</button>
+      </div>
+    </div>
+    <div class="trow"><span>强调色</span>
+      <div class="swatches" id="swatches"></div>
+    </div>
+    <div class="trow"><span>圆角 <b id="v-radius">10</b>px</span><input type="range" id="r-radius" min="0" max="16" value="10"></div>
+    <div class="trow"><span>基础字号 <b id="v-fs">14</b>px</span><input type="range" id="r-fs" min="12" max="16" value="14"></div>
+    <div class="trow"><span>界面密度 <b id="v-pad">标准</b></span><input type="range" id="r-pad" min="80" max="120" value="100"></div>
+    <code id="tweak-out"></code>
+  </div>
+</div>
+
+<!-- 拆分确认弹窗 -->
+<div class="modal-mask" id="split-mask">
+  <div class="modal wide">
+    <h2>AI 拆分确认</h2>
+    <div class="split-cols">
+      <div class="split-src">
+        <h4 style="margin-top:0">原文（只读）</h4>
+        <textarea id="split-src" readonly></textarea>
+      </div>
+      <div style="flex:1.25;min-width:0">
+        <h4 style="margin-top:0">拆分结果（可改日期 / 编辑 / 删除）</h4>
+        <div class="split-items" id="split-items"></div>
+        <button class="btn-ghost" id="split-add" style="margin-top:8px">＋ 新增条目</button>
+      </div>
+    </div>
+    <div class="split-foot">
+      <span class="hint">⚠ 黄色条目 = 未识别日期，已默认归到今天，请确认</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn-ghost" id="split-cancel">取消</button>
+        <button class="btn-primary" id="split-ok">确认导入</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================= 示例数据（原文存储，展示时不做任何格式化） ================= */
+const TODAY = '2026-06-12';
+const data = {
+  '2026-06-12': [
+    { t:'09:12', x:'晨会，确认本周交付范围 #会议' },
+    { t:'11:05', x:'修了登录页偶发闪退，根因是 token 刷新竞态 #踩坑 @支付系统' },
+    { t:'14:32', x:'和 @支付系统 联调完成，对账接口通了 #进展' },
+  ],
+  '2026-06-11': [
+    { t:'10:20', x:'写完对账模块单测，覆盖率 87% #进展 @支付系统' },
+    { t:'16:40', x:'帮小王 review 了网关限流的 PR，提了两个并发问题' },
+  ],
+  '2026-06-10': [
+    { t:'09:30', x:'季度 OKR 对齐会，Q3 重点是稳定性 #会议' },
+    { t:'15:00', x:'排查线上慢查询，给 orders 表补了联合索引，p99 从 1.2s 降到 80ms #进展 #踩坑' },
+    { t:'18:10', x:'看了半小时 Tauri 文档，准备给团队分享' },
+    { t:'19:02', x:'下午3点开的会拖到了5点，下周得控制时间 #会议' },
+  ],
+  '2026-06-09': [ { t:'11:00', x:'对账接口联调被阻塞，等支付网关侧给沙箱环境 @支付系统' } ],
+  '2026-06-08': [ { t:'09:05', x:'制定本周计划：对账模块收尾 + 网关压测 #计划' } ],
+  '2026-06-05': [ { t:'17:30', x:'周复盘：压测发现连接池配置过小 #踩坑' } ],
+  '2026-06-03': [ { t:'13:20', x:'面试了一个候选人，基础不错但系统设计偏弱 #面试' } ],
+  '2026-05-28': [ { t:'10:00', x:'5月最后一周，赶在月底前把监控告警阈值全部梳理了一遍 #进展' } ],
+  '2026-05-20': [ { t:'14:00', x:'和产品对了下半年路线图 #会议' } ],
+  '2025-12-30': [ { t:'16:00', x:'写完了2025年度总结的初稿' } ],
+};
+let calY = 2026, calM = 6;
+
+/* ================= 工具 ================= */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const pad2 = n => String(n).padStart(2,'0');
+const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),1600); };
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nowTime = () => { const d=new Date(); return pad2(d.getHours())+':'+pad2(d.getMinutes()); };
+
+/* ================= 导航 ================= */
+$$('.nav-tab').forEach(b => b.onclick = () => {
+  $$('.nav-tab').forEach(x=>x.classList.remove('active'));
+  $$('.page').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  $('#page-'+b.dataset.page).classList.add('active');
+});
+
+/* ================= 记录页 ================= */
+function renderToday(){
+  const list = data[TODAY] || [];
+  $('#today-count').textContent = list.length + ' 条';
+  $('#today-list').innerHTML = list.length ? [...list].reverse().map((e,ri)=>{
+    const i = list.length-1-ri;
+    return `<div class="entry" data-i="${i}">
+      <time>${e.t}</time><div class="txt">${esc(e.x)}</div>
+      <div class="ops"><button class="op ed">编辑</button><button class="op del">删除</button></div>
+    </div>`;
+  }).join('') : '<div class="empty">今天还没有记录</div>';
+}
+function saveEntry(){
+  const v = $('#input').value.trim();
+  if(!v) return;
+  (data[TODAY] = data[TODAY] || []).push({ t: nowTime(), x: v });
+  $('#input').value = '';
+  renderToday(); renderCal(); toast('已保存');
+}
+$('#btn-save').onclick = saveEntry;
+$('#input').addEventListener('keydown', e => { if(e.ctrlKey && e.key==='Enter') saveEntry(); });
+$('#btn-date').onclick = () => toast('原型示意：点击可选择过去日期补记');
+$('#today-list').addEventListener('click', e => {
+  const entry = e.target.closest('.entry'); if(!entry) return;
+  const i = +entry.dataset.i, list = data[TODAY];
+  if(e.target.classList.contains('del')){
+    if(entry.dataset.confirm){ list.splice(i,1); renderToday(); renderCal(); toast('已删除'); }
+    else { entry.dataset.confirm = 1; e.target.textContent = '确认删除？'; }
+  } else if(e.target.classList.contains('ed')){
+    const txt = entry.querySelector('.txt');
+    const ta = document.createElement('textarea'); ta.className='inline'; ta.value = list[i].x;
+    txt.replaceWith(ta); ta.focus();
+    ta.addEventListener('keydown', ev => {
+      if(ev.ctrlKey && ev.key==='Enter'){ list[i].x = ta.value.trim() || list[i].x; renderToday(); renderCal(); toast('已更新'); }
+      if(ev.key==='Escape') renderToday();
+    });
+  }
+});
+
+/* ================= 回顾页：月历 ================= */
+const years = [...new Set(Object.keys(data).map(k=>+k.slice(0,4)))].sort();
+$('#sel-year').innerHTML = years.map(y=>`<option ${y===calY?'selected':''}>${y}</option>`).join('');
+$('#sel-month').innerHTML = Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===calM?'selected':''}>${i+1} 月</option>`).join('');
+
+function renderCal(){
+  $('#sel-year').value = calY; $('#sel-month').value = calM;
+  const first = new Date(calY, calM-1, 1);
+  const offset = (first.getDay()+6)%7;             // 周一为第一天
+  const days = new Date(calY, calM, 0).getDate();
+  const prevDays = new Date(calY, calM-1, 0).getDate();
+  let html = ['一','二','三','四','五','六','日'].map(d=>`<div class="dow">${d}</div>`).join('');
+  const cells = Math.ceil((offset+days)/7)*7;
+  for(let c=0; c<cells; c++){
+    const dnum = c - offset + 1;
+    if(dnum < 1 || dnum > days){
+      const n = dnum < 1 ? prevDays + dnum : dnum - days;
+      html += `<div class="cell dim"><span class="d">${n}</span></div>`;
+      continue;
+    }
+    const key = `${calY}-${pad2(calM)}-${pad2(dnum)}`;
+    const list = data[key] || [];
+    const shown = list.slice(0,3).map(e=>`<div class="e"><time>${e.t}</time>${esc(e.x)}</div>`).join('');
+    const more = list.length>3 ? `<div class="more">+${list.length-3} 条</div>` : '';
+    html += `<div class="cell ${key===TODAY?'today':''}" data-key="${key}">
+      <span class="d">${dnum}</span>${shown}${more}</div>`;
+  }
+  $('#cal').innerHTML = html;
+}
+function shiftMonth(n){ calM += n; if(calM>12){calM=1;calY++;} if(calM<1){calM=12;calY--;} renderCal(); }
+$('#prev-m').onclick = ()=>shiftMonth(-1);
+$('#next-m').onclick = ()=>shiftMonth(1);
+$('#btn-today').onclick = ()=>{ calY=2026; calM=6; renderCal(); };
+$('#sel-year').onchange = e=>{ calY=+e.target.value; renderCal(); };
+$('#sel-month').onchange = e=>{ calM=+e.target.value; renderCal(); };
+document.addEventListener('keydown', e=>{
+  if(!$('#page-review').classList.contains('active') || e.target.matches('input,textarea')) return;
+  if(e.key==='ArrowLeft') shiftMonth(-1);
+  if(e.key==='ArrowRight') shiftMonth(1);
+  if(e.key==='PageUp'){ calY--; renderCal(); e.preventDefault(); }
+  if(e.key==='PageDown'){ calY++; renderCal(); e.preventDefault(); }
+});
+
+/* 当日详情面板 */
+let panelKey = null;
+function openPanel(key){
+  panelKey = key;
+  const [y,m,d] = key.split('-');
+  $('#panel-title').textContent = `${y} 年 ${+m} 月 ${+d} 日 · ${(data[key]||[]).length} 条`;
+  $('#panel-list').innerHTML = (data[key]||[]).map(e=>
+    `<div class="entry"><time>${e.t}</time><div class="txt">${esc(e.x)}</div></div>`
+  ).join('') || '<div class="empty">这一天没有记录</div>';
+  $('#day-panel').classList.add('show'); $('#panel-mask').classList.add('show');
+}
+function closePanel(){ $('#day-panel').classList.remove('show'); $('#panel-mask').classList.remove('show'); }
+$('#cal').addEventListener('click', e=>{
+  const c = e.target.closest('.cell'); if(c && c.dataset.key) openPanel(c.dataset.key);
+});
+$('#panel-close').onclick = closePanel;
+$('#panel-mask').onclick = closePanel;
+$('#panel-add').addEventListener('keydown', e=>{
+  if(e.ctrlKey && e.key==='Enter'){
+    const v = e.target.value.trim(); if(!v) return;
+    (data[panelKey] = data[panelKey] || []).push({ t: nowTime(), x: v });
+    e.target.value=''; openPanel(panelKey); renderCal(); renderToday(); toast('已补记');
+  }
+});
+
+/* 搜索 → 扁平结果列表 */
+$('#search').addEventListener('input', e=>{
+  const q = e.target.value.trim();
+  const sr = $('#search-result'), cal = $('#cal');
+  if(!q){ sr.classList.remove('show'); cal.style.display='grid'; return; }
+  cal.style.display='none'; sr.classList.add('show');
+  const hits = Object.keys(data).sort().reverse().flatMap(k =>
+    data[k].filter(en=>en.x.includes(q)).map(en=>({k,en})));
+  sr.innerHTML = hits.length ? hits.map(({k,en})=>
+    `<div class="sr-day">${k}</div>
+     <div class="entry" data-jump="${k}" style="cursor:pointer"><time>${en.t}</time><div class="txt">${esc(en.x)}</div></div>`
+  ).join('') : '<div class="empty">没有匹配的记录</div>';
+});
+$('#search-result').addEventListener('click', e=>{
+  const en = e.target.closest('.entry'); if(!en) return;
+  const [y,m] = en.dataset.jump.split('-'); calY=+y; calM=+m;
+  $('#search').value=''; $('#search-result').classList.remove('show'); $('#cal').style.display='grid';
+  renderCal(); openPanel(en.dataset.jump);
+});
+
+/* ================= 报告页 ================= */
+const sampleMd = `# 2026-06-08 ~ 2026-06-12 周报
+
+## 本周工作
+### 6月8日 周一
+- 09:05 制定本周计划：对账模块收尾 + 网关压测 #计划
+
+### 6月9日 周二
+- 11:00 对账接口联调被阻塞，等支付网关侧给沙箱环境 @支付系统
+
+### 6月10日 周三
+- 09:30 季度 OKR 对齐会，Q3 重点是稳定性 #会议
+- 15:00 排查线上慢查询，给 orders 表补了联合索引，p99 从 1.2s 降到 80ms #进展 #踩坑
+
+### 6月11日 周四
+- 10:20 写完对账模块单测，覆盖率 87% #进展 @支付系统
+
+### 6月12日 周五
+- 11:05 修了登录页偶发闪退，根因是 token 刷新竞态 #踩坑 @支付系统
+- 14:32 和 @支付系统 联调完成，对账接口通了 #进展
+
+## 数据
+共 9 条记录，覆盖 5 天；标签 Top3：#进展(3) #踩坑(3) #会议(2)`;
+
+/* 时间范围：纯选择器，随报告类型切换，不支持手输 */
+function mondayOf(ds){ const d=new Date(ds+'T00:00'); d.setDate(d.getDate()-(d.getDay()+6)%7); return d; }
+function fmtD(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function renderRangeCtl(){
+  const type = $('#rpt-type').value, c = $('#range-ctl'), yopts = years.map(y=>`<option ${y===2026?'selected':''}>${y}</option>`).join('');
+  if(type==='日报') c.innerHTML = `<input type="date" id="rg-day" value="${TODAY}" style="flex:1">`;
+  else if(type==='周报') c.innerHTML = `<input type="date" id="rg-week" value="${TODAY}" style="flex:1" title="点选该周内任意一天">`;
+  else if(type==='季度总结') c.innerHTML = `<select id="rg-y" style="flex:1">${yopts}</select><select id="rg-q" style="flex:1"><option>Q1</option><option selected>Q2</option><option>Q3</option><option>Q4</option></select>`;
+  else c.innerHTML = `<select id="rg-y" style="flex:1">${yopts}</select>`;
+  c.querySelectorAll('input,select').forEach(el=>el.addEventListener('change', updateRangeLabel));
+  updateRangeLabel();
+}
+function updateRangeLabel(){
+  const type = $('#rpt-type').value; let txt='';
+  if(type==='日报') txt = $('#rg-day').value;
+  else if(type==='周报'){
+    const mon = mondayOf($('#rg-week').value), sun = new Date(mon); sun.setDate(sun.getDate()+6);
+    const end = fmtD(sun) > TODAY && fmtD(mon) <= TODAY ? TODAY : fmtD(sun);
+    txt = `${fmtD(mon)} ~ ${end}`;
+  } else if(type==='季度总结'){
+    const y=$('#rg-y').value, q=+$('#rg-q').value.slice(1);
+    txt = `${y}-${pad2(q*3-2)}-01 ~ ${y}-${pad2(q*3)}-${[31,30,30,31][q-1]}`;
+  } else { const y=$('#rg-y').value; txt = `${y}-01-01 ~ ${y==='2026'?TODAY:y+'-12-31'}`; }
+  $('#range-label').textContent = '实际范围：' + txt;
+}
+$('#rpt-type').addEventListener('change', renderRangeCtl);
+
+function renderPreview(){
+  $('#preview').innerHTML = `
+    <h1>2026-06-08 ~ 2026-06-12 周报</h1>
+    <h2>本周工作</h2>
+    <p class="muted">6月8日 周一</p>
+    <li>09:05 制定本周计划：对账模块收尾 + 网关压测 #计划</li>
+    <p class="muted">6月10日 周三</p>
+    <li>09:30 季度 OKR 对齐会，Q3 重点是稳定性 #会议</li>
+    <li>15:00 排查线上慢查询，p99 从 1.2s 降到 80ms #进展 #踩坑</li>
+    <p class="muted">6月12日 周五</p>
+    <li>11:05 修了登录页偶发闪退，根因是 token 刷新竞态 #踩坑 @支付系统</li>
+    <li>14:32 和 @支付系统 联调完成，对账接口通了 #进展</li>
+    <h2>数据</h2>
+    <p>共 9 条记录，覆盖 5 天；标签 Top3：#进展(3) #踩坑(3) #会议(2)</p>`;
+}
+renderPreview();
+$('#btn-gen').onclick = ()=>{ renderPreview(); toast('已按「直接整理」生成（示例）'); };
+$$('.ptab').forEach(b=>b.onclick=()=>{
+  $$('.ptab').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  if(b.dataset.pt==='src') $('#preview').innerHTML = `<textarea>${esc(sampleMd)}</textarea>`;
+  else renderPreview();
+});
+
+/* ================= 设置弹窗 ================= */
+$('#btn-settings').onclick = ()=>$('#settings-mask').classList.add('show');
+$('#settings-close').onclick = ()=>$('#settings-mask').classList.remove('show');
+$('#settings-mask').addEventListener('click', e=>{ if(e.target.id==='settings-mask') e.target.classList.remove('show'); });
+$$('.t').forEach(b=>b.onclick = b.onclick || (()=>toast('原型示意：' + b.textContent)));
+
+/* ================= 多日 AI 拆分（原型用本地启发式模拟 AI 返回） ================= */
+const SAMPLE_MULTI = `周一 上午把对账模块的边界用例补完了，下午和网关侧对了沙箱环境 @支付系统
+周二 给 orders 表加了归档脚本 #进展
+昨天 处理线上告警，是误报，顺手调了阈值 #踩坑
+今天 周会同步进度，确认下周一上线 #会议
+6月3号 面试了一个后端候选人 #面试
+还看了会儿 Tauri 的文档`;
+const dateOf = off => { const d = new Date(2026,5,12); d.setDate(d.getDate()+off); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; };
+function mockSplit(text){
+  const W = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':7,'天':7};
+  const todayDow = 5; // 2026-06-12 周五
+  return text.split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{
+    let m;
+    if(m = line.match(/^(\d{1,2})月(\d{1,2})[日号]\s*[:：，,]?\s*/))
+      return { date:`2026-${pad2(+m[1])}-${pad2(+m[2])}`, x:line.slice(m[0].length), warn:false };
+    if(m = line.match(/^周([一二三四五六日天])\s*[:：，,]?\s*/)){
+      const diff = W[m[1]] - todayDow;
+      return { date: dateOf(diff>0 ? diff-7 : diff), x:line.slice(m[0].length), warn:false };
+    }
+    if(m = line.match(/^昨天\s*[:：，,]?\s*/)) return { date:dateOf(-1), x:line.slice(m[0].length), warn:false };
+    if(m = line.match(/^前天\s*[:：，,]?\s*/)) return { date:dateOf(-2), x:line.slice(m[0].length), warn:false };
+    if(m = line.match(/^今天\s*[:：，,]?\s*/)) return { date:TODAY, x:line.slice(m[0].length), warn:false };
+    return { date:TODAY, x:line, warn:true };   // 未识别日期 → 默认今天并高亮
+  });
+}
+let splitRows = [];
+function renderSplit(){
+  $('#split-items').innerHTML = splitRows.map((r,i)=>`
+    <div class="sp-item ${r.warn?'warn':''}" data-i="${i}">
+      <input type="date" value="${r.date}">
+      <textarea rows="1">${esc(r.x)}</textarea>
+      <button class="rm" title="删除">✕</button>
+    </div>`).join('') || '<div class="empty">没有可导入的条目</div>';
+  $$('#split-items textarea').forEach(fitTa);
+  $('#split-ok').textContent = `确认导入 ${splitRows.length} 条`;
+}
+const fitTa = ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+$('#btn-split').onclick = ()=>{
+  let text = $('#input').value.trim();
+  if(!text){ text = SAMPLE_MULTI; $('#input').value = text; toast('已填入演示文本'); }
+  splitRows = mockSplit(text);
+  $('#split-src').value = text;
+  $('#split-mask').classList.add('show');   // 先显示再渲染，否则 scrollHeight 测量为 0
+  renderSplit();
+};
+$('#split-items').addEventListener('input', e=>{
+  const it = e.target.closest('.sp-item'); if(!it) return;
+  const r = splitRows[+it.dataset.i];
+  if(e.target.type==='date'){ r.date = e.target.value; r.warn = false; it.classList.remove('warn'); }
+  else { r.x = e.target.value; fitTa(e.target); }
+});
+$('#split-items').addEventListener('click', e=>{
+  if(!e.target.classList.contains('rm')) return;
+  splitRows.splice(+e.target.closest('.sp-item').dataset.i, 1);
+  renderSplit();
+});
+$('#split-add').onclick = ()=>{ splitRows.push({ date:TODAY, x:'', warn:false }); renderSplit(); };
+$('#split-cancel').onclick = ()=>$('#split-mask').classList.remove('show');
+$('#split-ok').onclick = ()=>{
+  const rows = splitRows.filter(r=>r.x.trim());
+  rows.forEach(r=>(data[r.date] = data[r.date] || []).push({ t: nowTime(), x: r.x.trim() }));
+  $('#split-mask').classList.remove('show');
+  $('#input').value = '';
+  renderToday(); renderCal();
+  toast(`已导入 ${rows.length} 条到 ${new Set(rows.map(r=>r.date)).size} 天`);
+};
+
+/* ================= #/@ 自动补全 ================= */
+function collectTokens(sym){
+  const freq = new Map();
+  Object.values(data).flat().forEach(e=>
+    (e.x.match(sym==='#' ? /#[^\s#@，。,]+/g : /@[^\s#@，。,]+/g)||[]).forEach(t=>freq.set(t,(freq.get(t)||0)+1)));
+  return [...freq.entries()].sort((a,b)=>b[1]-a[1]);
+}
+function attachAC(ta){
+  const box = document.createElement('div'); box.className='ac'; box.style.display='none';
+  ta.parentElement.style.position = ta.parentElement.style.position || 'relative';
+  ta.parentElement.appendChild(box);
+  let items = [], sel = 0, range = null;
+  const close = ()=>{ box.style.display='none'; items=[]; };
+  const render = ()=>{
+    box.innerHTML = items.map(([t,n],i)=>`<div class="${i===sel?'sel':''}" data-i="${i}">${esc(t)}<span class="n">${n}</span></div>`).join('');
+    box.style.display='block';
+    box.style.left = '16px';
+    box.style.top = (ta.offsetTop + ta.offsetHeight - 6) + 'px';
+  };
+  ta.addEventListener('input', ()=>{
+    const head = ta.value.slice(0, ta.selectionStart);
+    const m = head.match(/([#@])([^\s#@，。,]*)$/);
+    if(!m){ close(); return; }
+    range = { start: head.length - m[0].length, end: ta.selectionStart };
+    items = collectTokens(m[1]).filter(([t])=>t.startsWith(m[1]+m[2]) && t !== m[0]);
+    sel = 0;
+    items.length ? render() : close();
+  });
+  ta.addEventListener('keydown', e=>{
+    if(box.style.display==='none') return;
+    if(e.key==='ArrowDown'){ sel=(sel+1)%items.length; render(); e.preventDefault(); }
+    else if(e.key==='ArrowUp'){ sel=(sel-1+items.length)%items.length; render(); e.preventDefault(); }
+    else if(e.key==='Enter' && !e.ctrlKey){ pick(sel); e.preventDefault(); }
+    else if(e.key==='Escape'){ close(); e.stopPropagation(); }
+  });
+  box.addEventListener('mousedown', e=>{
+    const d = e.target.closest('[data-i]'); if(d){ pick(+d.dataset.i); e.preventDefault(); }
+  });
+  ta.addEventListener('blur', ()=>setTimeout(close,150));
+  function pick(i){
+    const v = ta.value, t = items[i][0];
+    ta.value = v.slice(0,range.start) + t + ' ' + v.slice(range.end);
+    const pos = range.start + t.length + 1;
+    ta.setSelectionRange(pos,pos); ta.focus(); close();
+  }
+}
+attachAC($('#input'));
+attachAC($('#panel-add'));
+
+/* ================= AI 提供方切换（设置） ================= */
+$$('#ai-provider [data-p]').forEach(b=>b.onclick=()=>{
+  $$('#ai-provider [data-p]').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  $('#ai-claude').style.display = b.dataset.p==='claude' ? '' : 'none';
+  $('#ai-local').style.display = b.dataset.p==='local' ? '' : 'none';
+});
+
+/* ================= 原型调节面板 ================= */
+const COLORS = ['#4F6EF7','#10B981','#F59E0B','#EF4444','#8B5CF6','#0EA5E9'];
+$('#swatches').innerHTML = COLORS.map((c,i)=>`<div class="sw ${i===0?'on':''}" style="background:${c}" data-c="${c}"></div>`).join('');
+const tokens = { theme:'light', accent:'#4F6EF7', radius:10, fontSize:14, density:100 };
+function applyTokens(){
+  document.body.dataset.theme = tokens.theme;
+  const r = document.documentElement.style;
+  r.setProperty('--accent', tokens.accent);
+  r.setProperty('--radius', tokens.radius+'px');
+  r.setProperty('--fs', tokens.fontSize+'px');
+  r.setProperty('--pad', tokens.density/100);
+  $('#v-radius').textContent = tokens.radius;
+  $('#v-fs').textContent = tokens.fontSize;
+  $('#v-pad').textContent = tokens.density<95?'紧凑':tokens.density>105?'宽松':'标准';
+  $('#tweak-out').textContent = JSON.stringify(tokens);
+}
+$('#tweak-head').onclick = ()=>$('#tweak').classList.toggle('open');
+$$('#tweak [data-th]').forEach(b=>b.onclick=e=>{
+  e.stopPropagation();
+  $$('#tweak [data-th]').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  tokens.theme = b.dataset.th; applyTokens();
+});
+$('#swatches').addEventListener('click', e=>{
+  const sw = e.target.closest('.sw'); if(!sw) return;
+  $$('.sw').forEach(x=>x.classList.remove('on')); sw.classList.add('on');
+  tokens.accent = sw.dataset.c; applyTokens();
+});
+$('#r-radius').oninput = e=>{ tokens.radius=+e.target.value; applyTokens(); };
+$('#r-fs').oninput = e=>{ tokens.fontSize=+e.target.value; applyTokens(); };
+$('#r-pad').oninput = e=>{ tokens.density=+e.target.value; applyTokens(); };
+
+/* init */
+renderToday(); renderCal(); applyTokens(); renderRangeCtl();
+$('#tag-filter').innerHTML = '<option value="">全部标签</option>' +
+  collectTokens('#').map(([t])=>`<option>${esc(t)}</option>`).join('');
+</script>
+</body>
+</html>

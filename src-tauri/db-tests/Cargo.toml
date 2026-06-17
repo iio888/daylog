@@ -1,0 +1,21 @@
+# 数据层独立测试 crate：在没有 webkit2gtk 等 Tauri 系统依赖的机器上，
+# 单独编译并测试 ../src/db.rs（通过 #[path] 引入，单一数据源不复制代码）。
+# 完整的 Tauri 编译与打包在 Windows 上进行（见 README）。
+[package]
+name = "daylog-db-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "daylog_db_tests"
+path = "lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+
+[workspace]

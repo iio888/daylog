@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DayLog</title>
+    <style>
+      /* 启动闪屏：内联样式随 index.html 立即呈现（不依赖 JS 包加载），
+         避免窗口出现期间的空白等待。React 挂载后会自动替换 #root 内容，闪屏随之消失。
+         用 prefers-color-scheme 让闪屏在深色系统下也不闪白。 */
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #f7f8fa;
+        color: #1c1f26;
+        font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+      }
+      #boot .bw {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+      }
+      #boot .bw b {
+        color: #4f6ef7;
+      }
+      #boot .spin {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 3px solid rgba(79, 110, 247, 0.25);
+        border-top-color: #4f6ef7;
+        animation: boot-spin 0.7s linear infinite;
+      }
+      #boot .tip {
+        font-size: 13px;
+        color: #8a8f9c;
+      }
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        #boot {
+          background: #15171c;
+          color: #e8eaf0;
+        }
+        #boot .tip {
+          color: #7d828f;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="boot">
+        <div class="bw">Day<b>Log</b></div>
+        <div class="spin"></div>
+        <div class="tip">正在启动…</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

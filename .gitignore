@@ -1,0 +1,11 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/db-tests/target/
+src-tauri/gen/
+*.db
+*.db.bak
+
+# 本机私有：便携模式数据目录、Claude Code 本地设置
+data/
+.claude/settings.local.json
