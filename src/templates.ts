@@ -15,7 +15,9 @@ export interface Template {
   name: string;
   /** 适用报告类型；any = 全部 */
   type: ReportType | "any";
-  /** 去掉 frontmatter 后的正文 */
+  /** 模板形态：md = 占位符 Markdown；docx = Word 骨架（样式+结构） */
+  kind: "md" | "docx";
+  /** 去掉 frontmatter 后的正文（docx 模板为空，正文在 .docx 文件中） */
   body: string;
   /** 解析失败原因（下拉中标灰） */
   error?: string;
@@ -26,7 +28,7 @@ const TYPES = new Set(["daily", "weekly", "quarterly", "yearly", "any"]);
 export function parseTemplate(filename: string, raw: string): Template {
   const base = filename.replace(/\.md$/, "");
   const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!m) return { filename, name: base, type: "any", body: raw };
+  if (!m) return { filename, name: base, type: "any", kind: "md", body: raw };
 
   let name = base;
   let type: Template["type"] = "any";
@@ -36,12 +38,17 @@ export function parseTemplate(filename: string, raw: string): Template {
     if (kv[1] === "name") name = kv[2];
     if (kv[1] === "type") {
       if (!TYPES.has(kv[2])) {
-        return { filename, name: base, type: "any", body: "", error: `未知 type：${kv[2]}` };
+        return { filename, name: base, type: "any", kind: "md", body: "", error: `未知 type：${kv[2]}` };
       }
       type = kv[2] as Template["type"];
     }
   }
-  return { filename, name, type, body: raw.slice(m[0].length) };
+  return { filename, name, type, kind: "md", body: raw.slice(m[0].length) };
+}
+
+/** Word 模板项：无 frontmatter，name 取文件名，适用全部报告类型 */
+export function docxTemplate(filename: string): Template {
+  return { filename, name: filename.replace(/\.docx$/i, ""), type: "any", kind: "docx", body: "" };
 }
 
 /** 内置模板：首次启动播种到模板目录，用户可改可删（删后不自动恢复） */

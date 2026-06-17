@@ -1,5 +1,6 @@
 mod db;
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rusqlite::Connection;
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -144,6 +145,53 @@ fn export_report(dirs: State<Dirs>, filename: String, content: String) -> CmdRes
     let name = sanitize_filename(&filename)?;
     let path = dir.join(name);
     std::fs::write(&path, content).map_err(err)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// 列出模板目录下的 .docx 文件名
+#[tauri::command]
+fn list_docx_templates(dirs: State<Dirs>) -> CmdResult<Vec<String>> {
+    let dir = dirs.data.join("templates");
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(&dir).map_err(err)? {
+        let name = e.map_err(err)?.file_name().to_string_lossy().to_string();
+        if name.to_lowercase().ends_with(".docx") {
+            out.push(name);
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// 读取模板目录下某文件的二进制内容，base64 返回（供前端 docx 引擎处理）
+#[tauri::command]
+fn read_template_bytes(dirs: State<Dirs>, filename: String) -> CmdResult<String> {
+    let name = sanitize_filename(&filename)?;
+    let bytes = std::fs::read(dirs.data.join("templates").join(name)).map_err(err)?;
+    Ok(STANDARD.encode(bytes))
+}
+
+/// 保存二进制模板（导入 .docx 用），data_b64 为 base64 编码内容
+#[tauri::command]
+fn save_template_bytes(dirs: State<Dirs>, filename: String, data_b64: String) -> CmdResult<()> {
+    let dir = dirs.data.join("templates");
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let name = sanitize_filename(&filename)?;
+    let bytes = STANDARD.decode(data_b64.as_bytes()).map_err(err)?;
+    std::fs::write(dir.join(name), bytes).map_err(err)?;
+    Ok(())
+}
+
+/// 导出二进制文件（.docx）到 exports/，data_b64 为 base64，返回完整路径
+#[tauri::command]
+fn export_report_bytes(dirs: State<Dirs>, filename: String, data_b64: String) -> CmdResult<String> {
+    let dir = dirs.data.join("exports");
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let name = sanitize_filename(&filename)?;
+    let bytes = STANDARD.decode(data_b64.as_bytes()).map_err(err)?;
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).map_err(err)?;
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -346,6 +394,10 @@ pub fn run() {
             list_templates,
             save_template,
             export_report,
+            list_docx_templates,
+            read_template_bytes,
+            save_template_bytes,
+            export_report_bytes,
             open_dir,
             save_report,
             get_settings,

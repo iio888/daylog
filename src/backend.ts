@@ -25,6 +25,16 @@ export interface Backend {
   saveTemplate(filename: string, content: string): Promise<void>;
   /** 导出文件。Tauri：写入 exports/ 并返回完整路径；浏览器：触发下载并返回 null */
   exportFile(filename: string, content: string): Promise<string | null>;
+
+  /* ---- Word 模板（二进制） ---- */
+  /** 列出模板目录下的 .docx 文件名 */
+  listDocxTemplates(): Promise<string[]>;
+  /** 读取模板目录下某文件的二进制内容 */
+  readTemplateBytes(filename: string): Promise<Uint8Array>;
+  /** 保存二进制模板（导入 .docx 用） */
+  saveTemplateBytes(filename: string, bytes: Uint8Array): Promise<void>;
+  /** 导出二进制文件（.docx）。Tauri：写 exports/ 返回路径；浏览器：触发下载返回 null */
+  exportBytes(filename: string, bytes: Uint8Array): Promise<string | null>;
   /** 打开数据/模板/导出目录（仅桌面版有效） */
   openDir(kind: "data" | "templates" | "exports"): Promise<void>;
   saveReport(type: string, start: string, end: string, template: string, content: string): Promise<void>;
@@ -41,6 +51,24 @@ export interface Backend {
 }
 
 const isTauri = "__TAURI_INTERNALS__" in window;
+
+/* ---------------- base64 ↔ 字节（二进制桥接） ---------------- */
+
+function bytesToB64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 
 /* ---------------- Tauri 实现 ---------------- */
 
@@ -76,6 +104,13 @@ function tauriBackend(): Backend {
     listTemplates: () => call("list_templates"),
     saveTemplate: (filename, content) => call("save_template", { filename, content }),
     exportFile: (filename, content) => call("export_report", { filename, content }),
+    listDocxTemplates: () => call("list_docx_templates"),
+    readTemplateBytes: async (filename) =>
+      b64ToBytes(await call<string>("read_template_bytes", { filename })),
+    saveTemplateBytes: (filename, bytes) =>
+      call("save_template_bytes", { filename, dataB64: bytesToB64(bytes) }),
+    exportBytes: (filename, bytes) =>
+      call<string>("export_report_bytes", { filename, dataB64: bytesToB64(bytes) }),
     openDir: (kind) => call("open_dir", { kind }),
     saveReport: (reportType, rangeStart, rangeEnd, template, content) =>
       call("save_report", { reportType, rangeStart, rangeEnd, template, content }),
@@ -222,6 +257,38 @@ function mockBackend(): Backend {
       URL.revokeObjectURL(a.href);
       return null; // 浏览器下载，无本地路径
     },
+    async listDocxTemplates() {
+      const map: Record<string, string> = JSON.parse(
+        localStorage.getItem("daylog-docx-templates") ?? "{}",
+      );
+      return Object.keys(map).sort();
+    },
+    async readTemplateBytes(filename) {
+      const map: Record<string, string> = JSON.parse(
+        localStorage.getItem("daylog-docx-templates") ?? "{}",
+      );
+      const b64 = map[filename];
+      if (!b64) throw new Error(`找不到模板：${filename}`);
+      return b64ToBytes(b64);
+    },
+    async saveTemplateBytes(filename, bytes) {
+      const map: Record<string, string> = JSON.parse(
+        localStorage.getItem("daylog-docx-templates") ?? "{}",
+      );
+      map[filename] = bytesToB64(bytes);
+      localStorage.setItem("daylog-docx-templates", JSON.stringify(map));
+    },
+    async exportBytes(filename, bytes) {
+      const blob = new Blob([bytes as BlobPart], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      return null;
+    },
     async openDir() {
       throw new Error("浏览器预览模式不支持打开本地目录（桌面版可用）");
     },
@@ -242,6 +309,7 @@ function mockBackend(): Backend {
       // 预览模式没有真模型：按提示词意图给出可验收的模拟响应
       await new Promise((r) => setTimeout(r, 500));
       if (system.includes("拆分")) return JSON.stringify(mockSplit(user));
+      if (system.includes("Word 报告模板")) return JSON.stringify(mockDocxFill(user));
       if (system.includes("总结")) {
         const lines = user
           .split("\n")
@@ -266,6 +334,32 @@ function mockBackend(): Backend {
       return fresh.length;
     },
   };
+}
+
+/** 预览模式的 Word 模板填充（模拟 AI 返回；桌面版由真实模型完成） */
+function mockDocxFill(user: string): unknown {
+  let outline: { title?: string; sections?: { heading: string; kind: string; columns?: string[] }[] } = {};
+  try {
+    const m = user.match(/模板大纲：\n([\s\S]*?)\n\n工作记录：/);
+    if (m) outline = JSON.parse(m[1]);
+  } catch {
+    /* 容错：大纲解析失败则返回空填充 */
+  }
+  const recs = (user.split("工作记录：")[1] ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
+  const sections = (outline.sections ?? []).map((sec) => {
+    if (sec.kind === "table") {
+      const cols = sec.columns ?? [];
+      let textCol = cols.findIndex((c) => /目标|内容|事项|工作/.test(c));
+      if (textCol < 0) textCol = 0;
+      const rows = recs.slice(0, 8).map((line) => {
+        const text = line.replace(/^\[[^\]]*\]\s*/, "");
+        return cols.map((_, i) => (i === textCol ? text : ""));
+      });
+      return { heading: sec.heading, rows };
+    }
+    return { heading: sec.heading, prose: `（预览模式模拟）\n${recs.slice(0, 6).map((l) => l.replace(/^\[[^\]]*\]\s*/, "")).join("\n")}` };
+  });
+  return { title: outline.title ?? "", sections };
 }
 
 /** 预览模式的启发式拆分（模拟 AI 返回；桌面版由真实模型完成） */
