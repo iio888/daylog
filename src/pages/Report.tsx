@@ -238,8 +238,9 @@ export default function Report({ active }: Props) {
 
   async function doExport(kind: "md" | "html") {
     if (!md) return toast("请先生成报告");
-    const content =
-      kind === "md" ? md : wrapHtml(exportName("html"), marked.parse(md) as string);
+    const body = kind === "md" ? md : wrapHtml(exportName("html"), marked.parse(md) as string);
+    // 加 UTF-8 BOM：否则 WPS / Word / 记事本在中文 Windows 上按 GBK 打开会乱码
+    const content = `\uFEFF${body}`;
     try {
       const path = await backend.exportFile(exportName(kind), content);
       toast(path ? `已导出：${path}` : "已开始下载");
