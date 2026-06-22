@@ -256,6 +256,8 @@ type: weekly        # daily | weekly | quarterly | yearly | any
 | 导出 PDF | 调用 WebView 打印对话框（系统"另存为 PDF"），不自研 PDF 引擎 |
 | 全量数据导出 | 设置弹窗内：导出全部记录为一个 JSON（备份用）；对应有 JSON 导入（合并，按条目 UUID 去重） |
 
+**导出位置**：报告页生成按钮下方显示当前导出目录的完整路径，可复制；点「设置位置…」弹出系统文件夹选择框可改。所选路径单独存于数据目录的 `export_dir.txt`（与 `settings.json` 解耦），对 `.md`、`.html`、`.docx` 导出统一生效；未设置时默认写入数据目录下的 `exports/`。
+
 ### 3.6 设置（弹窗，非独立页面）
 
 - AI 服务（详见 3.7 节）：单一 OpenAI 兼容端点——Base URL（默认 `http://localhost:11434/v1`）+ API Key（可选，密码框，存 settings.json，仅本机）+ 模型名；外加「测试连接」按钮（仅凭 Base URL + Key 即可测试，结果就地显示在按钮右侧，成功后模型名变为端点返回模型的下拉框）。不再有"Claude / 本地"提供方切换。

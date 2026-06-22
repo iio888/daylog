@@ -46,6 +46,7 @@ export default function Report({ active }: Props) {
   const [md, setMd] = useState("");
   // 当前生成结果若来自 Word 模板，保留其 .docx 字节（导出用；md 为屏幕预览）
   const [docxBytes, setDocxBytes] = useState<Uint8Array | null>(null);
+  const [exportDir, setExportDirState] = useState("");
   const [tab, setTab] = useState<"render" | "src">("render");
   const [busy, setBusy] = useState(false);
   const [genMode, setGenMode] = useState<"direct" | "ai">("direct");
@@ -82,6 +83,7 @@ export default function Report({ active }: Props) {
     if (!active) return;
     void reloadTemplates().catch((e) => toast(`模板加载失败：${e}`));
     void backend.listYears().then(setYears);
+    void backend.getExportDir().then(setExportDirState).catch(() => undefined);
   }, [active, reloadTemplates]);
 
   // 当前类型可用的模板（type 匹配或 any），默认选中第一个匹配项
@@ -223,6 +225,28 @@ export default function Report({ active }: Props) {
       toast(path ? `已导出：${path}` : "已开始下载");
     } catch (e) {
       toast(`导出失败：${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  async function copyExportDir() {
+    try {
+      await copyText(exportDir);
+      toast("已复制导出路径");
+    } catch (e) {
+      toast(`${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  async function configExportDir() {
+    try {
+      const picked = await backend.pickExportDir(exportDir);
+      if (!picked) return;
+      await backend.setExportDir(picked);
+      const now = await backend.getExportDir();
+      setExportDirState(now);
+      toast(`导出位置已设为：${now}`);
+    } catch (e) {
+      toast(`设置失败：${e instanceof Error ? e.message : e}`);
     }
   }
 
@@ -396,6 +420,15 @@ export default function Report({ active }: Props) {
         <button className="btn-primary" disabled={busy || !tplFile} onClick={() => void generate()}>
           {busy ? "生成中…" : "生成报告"}
         </button>
+
+        <div className="field">
+          <label>导出位置</label>
+          <div className="export-path" title={exportDir}>{exportDir || "（默认）"}</div>
+          <div className="row2">
+            <button className="btn-ghost slim" onClick={() => void copyExportDir()}>复制路径</button>
+            <button className="btn-ghost slim" onClick={() => void configExportDir()}>设置位置…</button>
+          </div>
+        </div>
 
         {aiError && (
           <div className="ai-error">

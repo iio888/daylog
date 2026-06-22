@@ -224,6 +224,12 @@ main { flex: 1; overflow: auto; display: flex; flex-direction: column; }
 .field .row2 { display: flex; gap: 6px; }
 .field .note { font-size: 11px; color: var(--text-dim); margin-top: 5px; line-height: 1.5; }
 .btn-ghost.slim { width: 100%; margin-top: 6px; }
+.export-path {
+  font-size: 11px; color: var(--text-dim);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+  padding: 7px 10px; line-height: 1.5; word-break: break-all;
+  user-select: text; cursor: text;
+}
 .seg { display: flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
 .seg button { flex: 1; padding: 7px 0; font-size: calc(var(--fs) - 1px); color: var(--text-dim); }
 .seg button.on {

@@ -37,6 +37,12 @@ export interface Backend {
   exportBytes(filename: string, bytes: Uint8Array): Promise<string | null>;
   /** 打开数据/模板/导出目录（仅桌面版有效） */
   openDir(kind: "data" | "templates" | "exports"): Promise<void>;
+  /** 当前导出目录的完整路径（供展示） */
+  getExportDir(): Promise<string>;
+  /** 设置导出目录；传空字符串恢复默认 */
+  setExportDir(dir: string): Promise<void>;
+  /** 弹出文件夹选择框，返回所选路径；取消返回 null（浏览器用输入框兜底） */
+  pickExportDir(current: string): Promise<string | null>;
   saveReport(type: string, start: string, end: string, template: string, content: string): Promise<void>;
 
   /* ---- M3：设置与 AI ---- */
@@ -112,6 +118,13 @@ function tauriBackend(): Backend {
     exportBytes: (filename, bytes) =>
       call<string>("export_report_bytes", { filename, dataB64: bytesToB64(bytes) }),
     openDir: (kind) => call("open_dir", { kind }),
+    getExportDir: () => call("get_export_dir"),
+    setExportDir: (dir) => call("set_export_dir", { dir }),
+    async pickExportDir(current) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({ directory: true, multiple: false, defaultPath: current || undefined });
+      return typeof picked === "string" ? picked : null;
+    },
     saveReport: (reportType, rangeStart, rangeEnd, template, content) =>
       call("save_report", { reportType, rangeStart, rangeEnd, template, content }),
     getSettings: () => call("get_settings"),
@@ -291,6 +304,18 @@ function mockBackend(): Backend {
     },
     async openDir() {
       throw new Error("浏览器预览模式不支持打开本地目录（桌面版可用）");
+    },
+    async getExportDir() {
+      return localStorage.getItem("daylog-export-dir") || "浏览器默认下载目录";
+    },
+    async setExportDir(dir) {
+      if (dir.trim()) localStorage.setItem("daylog-export-dir", dir.trim());
+      else localStorage.removeItem("daylog-export-dir");
+    },
+    async pickExportDir(current) {
+      // 浏览器无原生文件夹选择，用输入框兜底（仅预览用，实际下载位置由浏览器决定）
+      const v = window.prompt("输入导出目录的完整路径（浏览器预览仅作记录，实际下载位置由浏览器决定）", current);
+      return v && v.trim() ? v.trim() : null;
     },
     async saveReport(type, start, end, template, content) {
       const list: unknown[] = JSON.parse(localStorage.getItem("daylog-reports") ?? "[]");

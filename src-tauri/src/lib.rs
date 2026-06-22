@@ -137,10 +137,42 @@ fn save_template(dirs: State<Dirs>, filename: String, content: String) -> CmdRes
     Ok(())
 }
 
-/// 导出报告到 exports/ 目录，返回完整路径
+/// 解析当前导出目录：优先用户在 export_dir.txt 配置的路径，否则数据目录下的 exports/
+fn export_dir(dirs: &Dirs) -> std::path::PathBuf {
+    let cfg = dirs.data.join("export_dir.txt");
+    if let Ok(s) = std::fs::read_to_string(&cfg) {
+        let s = s.trim();
+        if !s.is_empty() {
+            return std::path::PathBuf::from(s);
+        }
+    }
+    dirs.data.join("exports")
+}
+
+/// 返回当前导出目录的完整路径（供前端展示）
+#[tauri::command]
+fn get_export_dir(dirs: State<Dirs>) -> CmdResult<String> {
+    Ok(export_dir(&dirs).to_string_lossy().to_string())
+}
+
+/// 设置导出目录；传空字符串则恢复默认（exports/）
+#[tauri::command]
+fn set_export_dir(dirs: State<Dirs>, dir: String) -> CmdResult<()> {
+    let cfg = dirs.data.join("export_dir.txt");
+    let t = dir.trim();
+    if t.is_empty() {
+        let _ = std::fs::remove_file(&cfg); // 恢复默认
+        return Ok(());
+    }
+    std::fs::create_dir_all(t).map_err(err)?; // 确保目录可用
+    std::fs::write(&cfg, t).map_err(err)?;
+    Ok(())
+}
+
+/// 导出报告到导出目录，返回完整路径
 #[tauri::command]
 fn export_report(dirs: State<Dirs>, filename: String, content: String) -> CmdResult<String> {
-    let dir = dirs.data.join("exports");
+    let dir = export_dir(&dirs);
     std::fs::create_dir_all(&dir).map_err(err)?;
     let name = sanitize_filename(&filename)?;
     let path = dir.join(name);
@@ -186,7 +218,7 @@ fn save_template_bytes(dirs: State<Dirs>, filename: String, data_b64: String) ->
 /// 导出二进制文件（.docx）到 exports/，data_b64 为 base64，返回完整路径
 #[tauri::command]
 fn export_report_bytes(dirs: State<Dirs>, filename: String, data_b64: String) -> CmdResult<String> {
-    let dir = dirs.data.join("exports");
+    let dir = export_dir(&dirs);
     std::fs::create_dir_all(&dir).map_err(err)?;
     let name = sanitize_filename(&filename)?;
     let bytes = STANDARD.decode(data_b64.as_bytes()).map_err(err)?;
@@ -200,7 +232,7 @@ fn export_report_bytes(dirs: State<Dirs>, filename: String, data_b64: String) ->
 fn open_dir(dirs: State<Dirs>, kind: String) -> CmdResult<()> {
     let dir = match kind.as_str() {
         "templates" => dirs.data.join("templates"),
-        "exports" => dirs.data.join("exports"),
+        "exports" => export_dir(&dirs),
         "data" => dirs.data.clone(),
         _ => return Err(format!("未知目录类型：{kind}")),
     };
@@ -368,6 +400,7 @@ fn data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Box<dyn std::e
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = data_dir(app.handle())?;
             app.manage(Dirs { data: dir.clone() });
@@ -398,6 +431,8 @@ pub fn run() {
             read_template_bytes,
             save_template_bytes,
             export_report_bytes,
+            get_export_dir,
+            set_export_dir,
             open_dir,
             save_report,
             get_settings,
