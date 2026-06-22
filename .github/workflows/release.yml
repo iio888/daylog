@@ -1,0 +1,76 @@
+name: release
+
+# 触发方式：
+#   1. 推送 v 开头的标签（如 v0.1.0）自动发布；
+#   2. 在 Actions 页手动运行（workflow_dispatch），需填标签名。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "发布标签（如 v0.1.0）"
+        required: true
+
+# 允许工作流创建 Release 并上传产物
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Rust 构建
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      # 编译前端 + Rust，打 NSIS 安装包，创建 Release 并上传安装包
+      - name: 打包并发布
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.TAG }}
+          releaseName: DayLog ${{ env.TAG }}
+          releaseBody: |
+            自动构建产物：
+
+            - `DayLog_x.x.x_x64-setup.exe`：NSIS 安装包，内置 WebView2 离线组件，全程无需联网。
+            - `DayLog_portable.exe`：绿色免安装版，放任意文件夹双击即用；在其旁新建 `data` 文件夹可让数据随程序走。
+          releaseDraft: false
+          prerelease: false
+
+      # 额外把绿色便携版 exe 也传到同一个 Release
+      - name: 附加绿色便携版 exe
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $exe = Get-ChildItem src-tauri/target/release -Filter *.exe -File |
+            Where-Object { $_.Name -notmatch 'setup|build|installer' } |
+            Select-Object -First 1
+          if (-not $exe) { throw "未找到绿色便携版 exe" }
+          Copy-Item $exe.FullName DayLog_portable.exe -Force
+          gh release upload "$env:TAG" DayLog_portable.exe --clobber
