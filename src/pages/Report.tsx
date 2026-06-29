@@ -23,7 +23,7 @@ import {
   type DocxFilled,
 } from "../docx";
 
-const TYPES: ReportType[] = ["daily", "weekly", "quarterly", "yearly"];
+const TYPES: ReportType[] = ["daily", "weekly", "monthly", "quarterly", "yearly"];
 const IMPORT_VALUE = "__import__";
 
 interface Props {
@@ -36,6 +36,8 @@ export default function Report({ active }: Props) {
   // 各类型的范围选择器状态（互不干扰）
   const [day, setDay] = useState(todayStr());
   const [weekDay, setWeekDay] = useState(todayStr());
+  const [mYear, setMYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
   const [qYear, setQYear] = useState(now.getFullYear());
   const [q, setQ] = useState<1 | 2 | 3 | 4>((Math.floor(now.getMonth() / 3) + 1) as 1 | 2 | 3 | 4);
   const [year, setYear] = useState(now.getFullYear());
@@ -104,7 +106,7 @@ export default function Report({ active }: Props) {
     }
   }, [usable, type, tplFile]);
 
-  const range = computeRange(type, { day, weekDay, qYear, q, year });
+  const range = computeRange(type, { day, weekDay, mYear, month, qYear, q, year });
   const yearOptions = useMemo(() => {
     const set = new Set(years);
     set.add(now.getFullYear());
@@ -345,6 +347,16 @@ export default function Report({ active }: Props) {
               title="点选该周内任意一天"
               onChange={(e) => setWeekDay(e.target.value || todayStr())}
             />
+          )}
+          {type === "monthly" && (
+            <div className="row2">
+              <select value={mYear} onChange={(e) => setMYear(+e.target.value)}>
+                {yearOptions.map((y) => <option key={y} value={y}>{y} 年</option>)}
+              </select>
+              <select value={month} onChange={(e) => setMonth(+e.target.value)}>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => <option key={n} value={n}>{n} 月</option>)}
+              </select>
+            </div>
           )}
           {type === "quarterly" && (
             <div className="row2">

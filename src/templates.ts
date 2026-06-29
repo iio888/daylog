@@ -1,10 +1,11 @@
 /** 模板系统：UTF-8 Markdown + {{占位符}}，可选 YAML frontmatter（name / type） */
 
-export type ReportType = "daily" | "weekly" | "quarterly" | "yearly";
+export type ReportType = "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
 
 export const REPORT_TYPE_LABEL: Record<ReportType, string> = {
   daily: "日报",
   weekly: "周报",
+  monthly: "月度总结",
   quarterly: "季度总结",
   yearly: "年度总结",
 };
@@ -23,7 +24,7 @@ export interface Template {
   error?: string;
 }
 
-const TYPES = new Set(["daily", "weekly", "quarterly", "yearly", "any"]);
+const TYPES = new Set(["daily", "weekly", "monthly", "quarterly", "yearly", "any"]);
 
 export function parseTemplate(filename: string, raw: string): Template {
   const base = filename.replace(/\.md$/, "");
@@ -81,6 +82,24 @@ type: weekly
 
 ## 按项目
 {{entries_by_project}}
+
+## 数据
+{{stats}}
+`,
+  },
+  {
+    filename: "内置-月度总结.md",
+    content: `---
+name: 月度总结（内置）
+type: monthly
+---
+# {{range}} 月度总结
+
+## 本月工作（按项目）
+{{entries_by_project}}
+
+## 重点事项（按标签）
+{{entries_by_tag}}
 
 ## 数据
 {{stats}}

@@ -112,6 +112,16 @@ export function quarterRange(year: number, q: 1 | 2 | 3 | 4): { start: string; e
   return { start, end };
 }
 
+/** 月度：当月 1 号 ~ 月末；当月截至今天 */
+export function monthRange(year: number, month: number): { start: string; end: string } {
+  const start = `${year}-${pad2(month)}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  let end = `${year}-${pad2(month)}-${pad2(lastDay)}`;
+  const today = todayStr();
+  if (start <= today && end > today) end = today;
+  return { start, end };
+}
+
 /** 年度：1/1 ~ 12/31；当年截至今天 */
 export function yearRange(year: number): { start: string; end: string } {
   const start = `${year}-01-01`;
@@ -123,13 +133,15 @@ export function yearRange(year: number): { start: string; end: string } {
 
 export function computeRange(
   type: ReportType,
-  sel: { day: string; weekDay: string; qYear: number; q: 1 | 2 | 3 | 4; year: number },
+  sel: { day: string; weekDay: string; mYear: number; month: number; qYear: number; q: 1 | 2 | 3 | 4; year: number },
 ): { start: string; end: string } {
   switch (type) {
     case "daily":
       return { start: sel.day, end: sel.day };
     case "weekly":
       return weekRange(sel.weekDay);
+    case "monthly":
+      return monthRange(sel.mYear, sel.month);
     case "quarterly":
       return quarterRange(sel.qYear, sel.q);
     case "yearly":
@@ -157,6 +169,8 @@ export function exportBaseName(type: ReportType, range: { start: string; end: st
       const { year, week } = isoWeek(range.start);
       return `Weekly_${year}-W${pad2(week)}`;
     }
+    case "monthly":
+      return `Monthly_${range.start.slice(0, 7)}`;
     case "quarterly": {
       const q = Math.floor((+range.start.slice(5, 7) - 1) / 3) + 1;
       return `Quarterly_${range.start.slice(0, 4)}-Q${q}`;
