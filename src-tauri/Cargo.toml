@@ -1,6 +1,6 @@
 [package]
 name = "daylog"
-version = "0.1.0"
+version = "1.0.0"
 description = "本地优先的日程记录工具：自然语言记录，一键生成日报/周报/季度/年度总结"
 edition = "2021"
 
