@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Entry } from "../types";
 import { backend } from "../backend";
-import { todayStr } from "../parse";
+import { useFollowToday, useToday } from "../useToday";
 import { toast } from "../toast";
 import { aiConfigured, loadSettings } from "../settings";
 import { aiSplit, type SplitItem } from "../ai";
@@ -17,23 +17,26 @@ interface Props {
 }
 
 export default function Write({ active }: Props) {
+  const today = useToday();
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [entryDate, setEntryDate] = useState(todayStr());
+  const [entryDate, setEntryDate] = useState(today);
   const [text, setText] = useState("");
   const [aiReady, setAiReady] = useState(false);
   const [splitBusy, setSplitBusy] = useState(false);
   const [splitRows, setSplitRows] = useState<SplitItem[] | null>(null);
 
+  // 跨零点后日期选择器跟到新的一天；已手动改成补记的日期不动
+  useFollowToday(today, setEntryDate);
+
   const reload = useCallback(async () => {
-    const today = todayStr();
     setEntries(await backend.listRange(today, today));
-  }, []);
+  }, [today]);
 
   const refreshAiReady = useCallback(() => {
     void loadSettings().then((s) => setAiReady(aiConfigured(s)));
   }, []);
 
-  // 变为可见时刷新（其他页面可能补记了今天，或跨天后"今天"已变化）
+  // 变为可见时刷新（其他页面可能补记了今天）；跨天后 reload 变化也会重新拉取
   useEffect(() => {
     if (active) void reload();
   }, [active, reload]);
@@ -58,7 +61,7 @@ export default function Write({ active }: Props) {
       return;
     }
     setText("");
-    toast(entryDate === todayStr() ? "已保存" : `已补记到 ${entryDate}`);
+    toast(entryDate === today ? "已保存" : `已补记到 ${entryDate}`);
     void reload();
   }
 
@@ -91,7 +94,7 @@ export default function Write({ active }: Props) {
     void reload();
   }
 
-  const isToday = entryDate === todayStr();
+  const isToday = entryDate === today;
 
   return (
     <div className="write-wrap">
@@ -121,9 +124,9 @@ export default function Write({ active }: Props) {
             type="date"
             className="date-pick"
             value={entryDate}
-            max={todayStr()}
+            max={today}
             title={isToday ? "记录到今天；可改为过去日期补记" : "正在补记到过去日期"}
-            onChange={(e) => setEntryDate(e.target.value || todayStr())}
+            onChange={(e) => setEntryDate(e.target.value || today)}
           />
           <button className="btn-primary" onClick={() => void save()}>
             保存

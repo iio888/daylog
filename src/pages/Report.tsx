@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import { backend } from "../backend";
-import { timeOf, todayStr } from "../parse";
+import { timeOf } from "../parse";
+import { useDayChange, useToday, ymqOf } from "../useToday";
 import { toast } from "../toast";
 import { aiConfigured, loadSettings } from "../settings";
 import { aiFillDocxTemplate, aiSummarize } from "../ai";
@@ -31,16 +32,35 @@ interface Props {
 }
 
 export default function Report({ active }: Props) {
+  const today = useToday();
   const now = new Date();
   const [type, setType] = useState<ReportType>("weekly");
   // 各类型的范围选择器状态（互不干扰）
-  const [day, setDay] = useState(todayStr());
-  const [weekDay, setWeekDay] = useState(todayStr());
+  const [day, setDay] = useState(today);
+  const [weekDay, setWeekDay] = useState(today);
   const [mYear, setMYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [qYear, setQYear] = useState(now.getFullYear());
   const [q, setQ] = useState<1 | 2 | 3 | 4>((Math.floor(now.getMonth() / 3) + 1) as 1 | 2 | 3 | 4);
   const [year, setYear] = useState(now.getFullYear());
+
+  // 窗口开着跨天/跨月/跨季/跨年时，各选择器跟到新的周期；
+  // 手动选过历史范围的（值已不等于旧的"当前"）保持不动。
+  useDayChange(today, (next, prev) => {
+    const n = ymqOf(next);
+    const p = ymqOf(prev);
+    setDay((d) => (d === prev ? next : d));
+    setWeekDay((d) => (d === prev ? next : d));
+    if (mYear === p.y && month === p.m) {
+      setMYear(n.y);
+      setMonth(n.m);
+    }
+    if (qYear === p.y && q === p.q) {
+      setQYear(n.y);
+      setQ(n.q);
+    }
+    if (year === p.y) setYear(n.y);
+  });
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [tplFile, setTplFile] = useState("");
@@ -337,15 +357,15 @@ export default function Report({ active }: Props) {
         <div className="field">
           <label>时间范围</label>
           {type === "daily" && (
-            <input type="date" value={day} max={todayStr()} onChange={(e) => setDay(e.target.value || todayStr())} />
+            <input type="date" value={day} max={today} onChange={(e) => setDay(e.target.value || today)} />
           )}
           {type === "weekly" && (
             <input
               type="date"
               value={weekDay}
-              max={todayStr()}
+              max={today}
               title="点选该周内任意一天"
-              onChange={(e) => setWeekDay(e.target.value || todayStr())}
+              onChange={(e) => setWeekDay(e.target.value || today)}
             />
           )}
           {type === "monthly" && (

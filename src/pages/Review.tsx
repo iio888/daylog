@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Entry } from "../types";
 import { backend } from "../backend";
-import { PROJ_RE, TAG_RE, pad2, parseProject, parseTags, timeOf, todayStr } from "../parse";
+import { PROJ_RE, TAG_RE, pad2, parseProject, parseTags, timeOf } from "../parse";
+import { useDayChange, useToday, ymqOf } from "../useToday";
 import { toast } from "../toast";
 import EntryItem from "../components/EntryItem";
 import AcTextarea from "../components/AcTextarea";
@@ -17,12 +18,20 @@ interface Props {
 }
 
 export default function Review({ active, focusSearchSignal }: Props) {
+  const today = useToday();
   const now = new Date();
   // 年月合并为单个 state：键盘监听只注册一次，必须用函数式更新避免闭包捕获旧值
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 });
   const { y: year, m: month } = ym;
   const [entries, setEntries] = useState<Entry[]>([]); // 当月数据
   const [years, setYears] = useState<number[]>([]);
+
+  // 窗口开着跨月时，正看着当月的日历跟到新的一月；已翻到历史月份的不动
+  useDayChange(today, (next, prev) => {
+    const n = ymqOf(next);
+    const p = ymqOf(prev);
+    setYm((v) => (v.y === p.y && v.m === p.m ? { y: n.y, m: n.m } : v));
+  });
 
   const [q, setQ] = useState("");
   const [flatResult, setFlatResult] = useState<Entry[] | null>(null);
@@ -136,7 +145,6 @@ export default function Review({ active, focusSearchSignal }: Props) {
     });
   }, [year, month]);
 
-  const today = todayStr();
   const yearOptions = useMemo(() => {
     const set = new Set(years);
     set.add(now.getFullYear());
