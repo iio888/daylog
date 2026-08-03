@@ -5,7 +5,7 @@ import { timeOf } from "../parse";
 import { useDayChange, useToday, ymqOf } from "../useToday";
 import { toast } from "../toast";
 import { aiConfigured, loadSettings } from "../settings";
-import { aiFillDocxTemplate, aiSummarize } from "../ai";
+import { aiFillDocxTemplate, aiWorkSummary, isCancelled } from "../ai";
 import { copyText } from "../copy";
 import {
   BUILTIN_TEMPLATES,
@@ -15,7 +15,16 @@ import {
   type ReportType,
   type Template,
 } from "../templates";
-import { computeRange, exportBaseName, fillTemplate, mdToPlain, wrapHtml } from "../report";
+import {
+  computeRange,
+  exportBaseName,
+  fillTemplate,
+  mdToPlain,
+  parseMdOutline,
+  rangeLabel,
+  renderWorkSummary,
+  wrapHtml,
+} from "../report";
 import {
   directFill,
   docxFilledToMarkdown,
@@ -71,10 +80,14 @@ export default function Report({ active }: Props) {
   const [exportDir, setExportDirState] = useState("");
   const [tab, setTab] = useState<"render" | "src">("render");
   const [busy, setBusy] = useState(false);
+  /** AI 总结的阶段提示，如「提取 2/5」 */
+  const [progress, setProgress] = useState("");
   const [genMode, setGenMode] = useState<"direct" | "ai">("direct");
   const [aiReady, setAiReady] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // 在途的 HTTP 停不掉（ai_chat 无取消口），但可以在批次之间停下
+  const cancelRef = useRef(false);
 
   useEffect(() => {
     const refresh = () =>
@@ -146,26 +159,45 @@ export default function Report({ active }: Props) {
     try {
       setDocxBytes(null);
       const entries = await backend.listRange(range.start, range.end);
-      let summaryOverride: string | undefined;
+      let result: string;
       if (mode === "ai") {
         if (entries.length === 0) {
           toast("该范围没有记录，无需 AI 总结");
           setBusy(false);
           return;
         }
-        const entriesText = entries
-          .map((e) => `[${e.entry_date} ${timeOf(e.created_at)}] ${e.content}`)
-          .join("\n");
-        const rangeLabel = range.start === range.end ? range.start : `${range.start} ~ ${range.end}`;
+        // AI 模式不走占位符：模板只贡献标题与章节名，正文由工作项分类结果渲染
+        const outline = parseMdOutline(
+          tpl.body,
+          range,
+          `${rangeLabel(range)} ${REPORT_TYPE_LABEL[type]}`,
+        );
+        cancelRef.current = false;
         try {
-          summaryOverride = await aiSummarize(entriesText, REPORT_TYPE_LABEL[type], rangeLabel);
+          const { summary, notes } = await aiWorkSummary(
+            entries,
+            outline,
+            REPORT_TYPE_LABEL[type],
+            range,
+            {
+              onProgress: (p) =>
+                setProgress(p.phase === "extract" ? `提取 ${p.index}/${p.total}` : "撰写总结"),
+              shouldCancel: () => cancelRef.current,
+            },
+          );
+          result = renderWorkSummary(outline, summary, entries, range, notes);
         } catch (e) {
-          setAiError(e instanceof Error ? e.message : String(e));
+          if (isCancelled(e)) toast("已取消");
+          else setAiError(e instanceof Error ? e.message : String(e));
           setBusy(false);
+          setProgress("");
           return;
+        } finally {
+          setProgress("");
         }
+      } else {
+        result = fillTemplate(tpl.body, entries, range);
       }
-      const result = fillTemplate(tpl.body, entries, range, summaryOverride);
       setMd(result);
       setTab("render");
       void backend
@@ -445,13 +477,18 @@ export default function Report({ active }: Props) {
           <div className="note">
             {genMode === "direct"
               ? "直接整理：离线把记录按模板占位符填充，原文呈现。"
-              : "AI 总结：模型基于记录原文撰写 {{summary}} 部分，其余占位符仍精确填充。"}
+              : "AI 总结：模型按语义把记录归类成工作项，逐项写成符合 SMART 的段落；模板只提供标题与章节名，统计与记录清单类章节仍精确填充。"}
           </div>
         </div>
 
         <button className="btn-primary" disabled={busy || !tplFile} onClick={() => void generate()}>
-          {busy ? "生成中…" : "生成报告"}
+          {busy ? (progress ? `生成中…（${progress}）` : "生成中…") : "生成报告"}
         </button>
+        {busy && genMode === "ai" && (
+          <button className="btn-ghost slim" onClick={() => (cancelRef.current = true)}>
+            取消（当前这段跑完后停下）
+          </button>
+        )}
 
         <div className="field">
           <label>导出位置</label>

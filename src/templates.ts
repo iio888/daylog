@@ -95,6 +95,9 @@ type: monthly
 ---
 # {{range}} 月度总结
 
+## 本月工作总结
+{{summary}}
+
 ## 本月工作（按项目）
 {{entries_by_project}}
 
@@ -113,6 +116,9 @@ type: quarterly
 ---
 # {{range}} 季度总结
 
+## 本季度工作总结
+{{summary}}
+
 ## 重点事项（按标签）
 {{entries_by_tag}}
 
@@ -130,6 +136,9 @@ name: 年度总结（内置）
 type: yearly
 ---
 # {{range}} 年度总结
+
+## 本年度工作总结
+{{summary}}
 
 ## 按项目回顾
 {{entries_by_project}}

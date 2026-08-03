@@ -259,7 +259,13 @@ main { flex: 1; overflow: auto; display: flex; flex-direction: column; }
   font-size: 16px; margin: 20px 0 8px;
   padding-bottom: 6px; border-bottom: 1px solid var(--border);
 }
-.md-render h3 { font-size: 14px; color: var(--text-dim); margin: 14px 0 4px; }
+/* 工作项标题：AI 总结里 ### 是正文主体，不能是弱化的灰色小字 */
+.md-render h3 { font-size: 15px; color: var(--text); font-weight: 600; margin: 16px 0 4px; }
+.md-render blockquote {
+  margin: 10px 0; padding: 6px 12px; border-left: 3px solid var(--border);
+  color: var(--text-dim); font-size: calc(var(--fs) - 1px);
+}
+.md-render em { color: var(--text-dim); font-size: calc(var(--fs) - 2px); font-style: normal; }
 .md-render ul { padding-left: 20px; }
 .md-render li { margin: 5px 0; }
 .md-render p { margin: 6px 0; }

@@ -333,16 +333,11 @@ function mockBackend(): Backend {
     async aiChat(system, user) {
       // 预览模式没有真模型：按提示词意图给出可验收的模拟响应
       await new Promise((r) => setTimeout(r, 500));
+      // 这两条必须排在最前：撰写助手的提示词里含「总结」，会被下面的分支抢走
+      if (system.includes("工作项提取助手")) return JSON.stringify(mockExtract(user));
+      if (system.includes("工作总结撰写助手")) return JSON.stringify(mockWorkSummary(user));
       if (system.includes("拆分")) return JSON.stringify(mockSplit(user));
       if (system.includes("Word 报告模板")) return JSON.stringify(mockDocxFill(user));
-      if (system.includes("总结")) {
-        const lines = user
-          .split("\n")
-          .filter((l) => l.trim())
-          .slice(0, 6)
-          .map((l) => `- ${l.replace(/^\[[^\]]*\]\s*/, "")}`);
-        return `（预览模式模拟 AI 总结，桌面版接真实模型）\n\n${lines.join("\n")}`;
-      }
       return "正常（预览模式模拟响应）";
     },
     async aiModels(baseUrl) {
@@ -385,6 +380,83 @@ function mockDocxFill(user: string): unknown {
     return { heading: sec.heading, prose: `（预览模式模拟）\n${recs.slice(0, 6).map((l) => l.replace(/^\[[^\]]*\]\s*/, "")).join("\n")}` };
   });
   return { title: outline.title ?? "", sections };
+}
+
+/** `[3] 2026-06-03 09:12 内容` → { n, project, text }。refs 必须是真实编号，
+ *  否则预览模式下溯源行与 @项目 反推这两条路径完全走不到。 */
+function mockRecords(block: string): { n: number; project: string; text: string }[] {
+  return block
+    .split("\n")
+    .map((l) => l.match(/^\[(\d+)\]\s*\d{4}-\d{2}-\d{2}\s*\d{2}:\d{2}\s*(.*)$/))
+    .filter((m): m is RegExpMatchArray => m !== null)
+    .map((m) => ({ n: +m[1], project: m[2].match(/@(\S+?)(?=[\s，。：；]|$)/)?.[1] ?? "", text: m[2] }));
+}
+
+/** 工作项名取自记录本身，且不重复 @项目 名——真实模型也是这个要求 */
+function mockTitle(text: string): string {
+  const s = text.replace(/[@#][^\s，。：；]+\s*/g, "").replace(/\s+/g, "").slice(0, 12);
+  return s || "其他事务";
+}
+
+/** 按 @项目 归组；没有项目的每 3 条凑一组 */
+function mockGroups(block: string): { project: string; recs: { n: number; text: string }[] }[] {
+  const groups = new Map<string, { project: string; recs: { n: number; text: string }[] }>();
+  mockRecords(block).forEach((r, i) => {
+    const k = r.project || `__other${Math.floor(i / 3)}`;
+    const g = groups.get(k) ?? { project: r.project, recs: [] };
+    g.recs.push({ n: r.n, text: r.text });
+    groups.set(k, g);
+  });
+  return [...groups.values()];
+}
+
+/** 预览模式的工作项提取（模拟 AI 返回；桌面版由真实模型完成） */
+function mockExtract(user: string): unknown {
+  const items = mockGroups(user)
+    .slice(0, 12)
+    .map((g) => ({
+      title: mockTitle(g.recs[0].text),
+      project: g.project,
+      tags: [],
+      refs: g.recs.slice(0, 8).map((r) => r.n),
+      summary: g.recs[0].text.slice(0, 60),
+    }));
+  return { items: items.length ? items : [{ title: "其他事务", project: "", tags: [], refs: [], summary: "（预览模式）" }] };
+}
+
+/** 预览模式的总结撰写（模拟 AI 返回；桌面版由真实模型完成） */
+function mockWorkSummary(user: string): unknown {
+  const headings = (user.match(/章节：\n([\s\S]*?)\n\n工作事实/)?.[1] ?? "")
+    .split("\n")
+    .map((l) => l.replace(/^\d+\.\s*/, "").replace(/（写作要求：[\s\S]*?）\s*$/, "").trim())
+    .filter((h) => h && !h.startsWith("（"));
+
+  const facts = user.split(/工作事实（[^）]*）：\n/)[1] ?? "";
+  let items: { title: string; project: string; refs: number[] }[] = [];
+  try {
+    // 多段模式下工作事实是草稿 JSON；单段模式下是编号记录原文
+    const drafts = JSON.parse(facts) as { items?: { title: string; project: string; refs: number[] }[] };
+    items = (drafts.items ?? []).map((d) => ({ title: d.title, project: d.project, refs: d.refs }));
+  } catch {
+    items = mockGroups(facts).map((g) => ({
+      title: mockTitle(g.recs[0].text),
+      project: g.project,
+      refs: g.recs.slice(0, 8).map((r) => r.n),
+    }));
+  }
+
+  const names = headings.length ? headings : ["主要工作"];
+  const sections = names.map((heading, i) => ({
+    heading,
+    items: items
+      .filter((_, j) => j % names.length === i)
+      .slice(0, 5)
+      .map((it) => ({
+        ...it,
+        body: `（预览模式模拟）围绕${it.title}推进了本期工作，依据 ${it.refs.length} 条记录归纳，量化数据以记录为准（记录中未量化的不做补充），桌面版接真实模型后此处为符合 SMART 的正式行文。`,
+      })),
+  }));
+  return { overview: "（预览模式模拟）本期工作概述，桌面版接真实模型后此处为模型撰写的整体概述。", sections };
 }
 
 /** 预览模式的启发式拆分（模拟 AI 返回；桌面版由真实模型完成） */
