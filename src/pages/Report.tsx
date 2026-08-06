@@ -249,7 +249,11 @@ export default function Report({ active }: Props) {
       }
 
       const out = await fillDocxTemplate(template, filled);
-      const previewMd = docxFilledToMarkdown(template.outline, filled);
+      // 告警跟着报告一起进预览：toast 一闪而过，而这些限制要在核对成稿时才看得出影响
+      const previewMd =
+        (template.warnings.length
+          ? `${template.warnings.map((w) => `> ⚠ 模板限制：${w}`).join("\n>\n")}\n\n`
+          : "") + docxFilledToMarkdown(template.outline, filled);
       setDocxBytes(out);
       setMd(previewMd);
       setTab("render");
@@ -356,7 +360,15 @@ export default function Report({ active }: Props) {
         await backend.saveTemplateBytes(file.name, bytes);
         await reloadTemplates();
         setTplFile(file.name);
-        toast(`已导入 Word 模板：${file.name.replace(/\.docx$/i, "")}`);
+        // 导入时先解析一遍：模板改不改是用户的事，但得让他现在就知道哪里会漏
+        const warnings = await parseDocxTemplate(bytes)
+          .then((t) => t.warnings)
+          .catch(() => []);
+        toast(
+          warnings.length
+            ? `已导入，但模板有 ${warnings.length} 处超出支持范围：${warnings[0]}`
+            : `已导入 Word 模板：${file.name.replace(/\.docx$/i, "")}`,
+        );
         return;
       }
       const content = await file.text();

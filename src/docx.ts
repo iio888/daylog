@@ -57,6 +57,12 @@ export interface DocxTemplate {
   titleP: Element | null;
   sections: ParsedSection[];
   outline: DocxOutline;
+  /**
+   * 模板超出引擎能力的地方。放在 DocxTemplate 而不是 DocxOutline 上：
+   * outline 会被 JSON.stringify 后喂给模型（见 ai.ts 的 aiFillDocxTemplate），
+   * 告警是说给用户听的，不该进提示词。
+   */
+  warnings: string[];
 }
 
 /* ---------------- DOM 小工具 ---------------- */
@@ -188,6 +194,21 @@ export async function parseDocxTemplate(bytes: Uint8Array): Promise<DocxTemplate
     }
   }
 
+  // 引擎有两处静默的能力边界，与其让用户拿到一份"看着填了、其实漏了"的报告，不如说清楚
+  const warnings: string[] = [];
+  if (sections.length === 0) {
+    warnings.push(
+      "未识别到任何章节标题，整篇将按正文处理。章节标题请使用 Word 内置的「标题 1/2…」或「Title」样式。",
+    );
+  }
+  sections
+    .filter((s) => s.tables.length > 1)
+    .forEach((s) =>
+      warnings.push(
+        `章节「${s.heading}」有 ${s.tables.length} 个表格，只会填充第 1 个，其余保持模板原样。`,
+      ),
+    );
+
   const outline: DocxOutline = {
     title: titleP ? elemText(titleP).trim() : "",
     sections: sections.map((s) => {
@@ -201,7 +222,7 @@ export async function parseDocxTemplate(bytes: Uint8Array): Promise<DocxTemplate
     }),
   };
 
-  return { zip, doc, titleP, sections, outline };
+  return { zip, doc, titleP, sections, outline, warnings };
 }
 
 /* ---------------- 回填 ---------------- */
