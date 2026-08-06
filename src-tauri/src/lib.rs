@@ -334,7 +334,12 @@ async fn ai_chat(dirs: State<'_, Dirs>, system: String, user: String) -> CmdResu
     if !status.is_success() {
         return Err(format!("AI 服务 {status}：{}", trunc(&text)));
     }
-    let j: serde_json::Value = serde_json::from_str(&text).map_err(err)?;
+    parse_chat_content(&text)
+}
+
+/// 解析 /chat/completions 的响应体。单独成函数是为了能脱离网络测试各种畸形响应。
+fn parse_chat_content(text: &str) -> CmdResult<String> {
+    let j: serde_json::Value = serde_json::from_str(text).map_err(err)?;
     j["choices"][0]["message"]["content"]
         .as_str()
         .map(str::to_string)
@@ -366,8 +371,12 @@ async fn ai_models(base_url: String, api_key: Option<String>) -> CmdResult<Vec<S
     if !status.is_success() {
         return Err(format!("AI 服务 {status}：{}", trunc(&text)));
     }
-    let j: serde_json::Value = serde_json::from_str(&text).map_err(err)?;
-    // OpenAI 兼容响应：{ "data": [ { "id": "..." }, ... ] }
+    parse_models_list(&text)
+}
+
+/// 解析 /models 的响应体。OpenAI 兼容格式：`{ "data": [ { "id": "..." }, ... ] }`
+fn parse_models_list(text: &str) -> CmdResult<Vec<String>> {
+    let j: serde_json::Value = serde_json::from_str(text).map_err(err)?;
     let mut ids: Vec<String> = j["data"]
         .as_array()
         .map(|arr| {
@@ -443,4 +452,74 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 每个用例一个独立的临时数据目录，互不干扰
+    fn tmp_dirs(tag: &str) -> Dirs {
+        let data = std::env::temp_dir().join(format!("daylog-test-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&data).unwrap();
+        Dirs { data }
+    }
+
+    #[test]
+    fn sanitize_filename_blocks_path_escapes() {
+        // 前端传来的文件名会直接拼进数据目录，这里是唯一一道防线
+        assert_eq!(sanitize_filename("周报.md").unwrap(), "周报.md");
+        assert!(sanitize_filename("").is_err());
+        assert!(sanitize_filename("../../etc/passwd").is_err());
+        assert!(sanitize_filename("a/b.md").is_err());
+        assert!(sanitize_filename("a\\b.md").is_err());
+        assert!(sanitize_filename("..").is_err());
+    }
+
+    #[test]
+    fn trunc_counts_chars_not_bytes() {
+        assert_eq!(trunc("短"), "短");
+        // 按字节截会把多字节字符切成乱码
+        assert_eq!(trunc(&"中".repeat(400)).chars().count(), 300);
+    }
+
+    #[test]
+    fn parse_chat_content_handles_bad_responses() {
+        let ok = r#"{"choices":[{"message":{"content":"总结正文"}}]}"#;
+        assert_eq!(parse_chat_content(ok).unwrap(), "总结正文");
+        // 端点返回 200 但结构不对（例如把错误塞在 error 字段里）
+        assert!(parse_chat_content(r#"{"error":"quota"}"#).is_err());
+        assert!(parse_chat_content(r#"{"choices":[]}"#).is_err());
+        assert!(parse_chat_content("不是 JSON").is_err());
+    }
+
+    #[test]
+    fn parse_models_list_sorts_and_rejects_empty() {
+        let ok = r#"{"data":[{"id":"qwen3:14b"},{"id":"llama3"},{"noid":1}]}"#;
+        assert_eq!(parse_models_list(ok).unwrap(), vec!["llama3", "qwen3:14b"]);
+        // 连上了但一个模型都没有，要当作失败——否则「测试连接」会假装成功
+        assert!(parse_models_list(r#"{"data":[]}"#).is_err());
+        assert!(parse_models_list("{}").is_err());
+        assert!(parse_models_list("<html>502</html>").is_err());
+    }
+
+    #[test]
+    fn export_dir_falls_back_to_exports_subdir() {
+        let dirs = tmp_dirs("exportdir-default");
+        let _ = std::fs::remove_file(dirs.data.join("export_dir.txt"));
+        assert_eq!(export_dir(&dirs), dirs.data.join("exports"));
+    }
+
+    #[test]
+    fn export_dir_honors_configured_path_but_ignores_blank() {
+        let dirs = tmp_dirs("exportdir-configured");
+        let cfg = dirs.data.join("export_dir.txt");
+
+        std::fs::write(&cfg, "  /tmp/我的导出  \n").unwrap();
+        assert_eq!(export_dir(&dirs), std::path::PathBuf::from("/tmp/我的导出"));
+
+        // 空白内容不能让导出目录变成空路径
+        std::fs::write(&cfg, "   \n").unwrap();
+        assert_eq!(export_dir(&dirs), dirs.data.join("exports"));
+    }
 }
