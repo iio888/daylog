@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import { backend } from "../backend";
 import { timeOf } from "../parse";
-import { useDayChange, useToday, ymqOf } from "../useToday";
+import { useDayChange, useToday, useYearOptions, ymqOf } from "../useToday";
 import { toast } from "../toast";
 import { aiConfigured, loadSettings } from "../settings";
 import { aiFillDocxTemplate, aiWorkSummary, isCancelled } from "../ai";
@@ -140,12 +140,7 @@ export default function Report({ active }: Props) {
   }, [usable, type, tplFile]);
 
   const range = computeRange(type, { day, weekDay, mYear, month, qYear, q, year });
-  const yearOptions = useMemo(() => {
-    const set = new Set(years);
-    set.add(now.getFullYear());
-    return [...set].sort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [years]);
+  const yearOptions = useYearOptions(years, mYear, qYear, year);
 
   async function generate(mode: "direct" | "ai" = genMode) {
     const tpl = templates.find((t) => t.filename === tplFile);

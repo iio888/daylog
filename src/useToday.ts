@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { todayStr } from "./parse";
 
 /**
@@ -65,6 +65,20 @@ export function useFollowToday(
   setDate: (update: (prev: string) => string) => void,
 ): void {
   useDayChange(today, (next, prev) => setDate((d) => (d === prev ? next : d)));
+}
+
+/**
+ * 年份下拉的选项：库里有记录的年份，并入今年与当前选中的年份。
+ * 并入后两者是必需的——空库时下拉不能是空的，翻到没有记录的年份时
+ * 那一年也得留在选项里，否则 select 会显示成另一个年份。
+ */
+export function useYearOptions(years: number[], ...pinned: number[]): number[] {
+  const key = pinned.join(",");
+  return useMemo(
+    () => [...new Set([...years, new Date().getFullYear(), ...pinned])].sort((a, b) => a - b),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [years, key],
+  );
 }
 
 /** "YYYY-MM-DD" → { y, m, q } */

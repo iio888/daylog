@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Entry } from "../types";
 import { SEARCH_LIMIT, backend } from "../backend";
 import { MAX_ENTRY_LEN, PROJ_RE, TAG_RE, pad2, parseProject, parseTags, timeOf } from "../parse";
-import { useDayChange, useToday, ymqOf } from "../useToday";
+import { useDayChange, useToday, useYearOptions, ymqOf } from "../useToday";
 import { toast } from "../toast";
 import EntryItem from "../components/EntryItem";
 import AcTextarea from "../components/AcTextarea";
@@ -147,13 +147,7 @@ export default function Review({ active, focusSearchSignal }: Props) {
     });
   }, [year, month]);
 
-  const yearOptions = useMemo(() => {
-    const set = new Set(years);
-    set.add(now.getFullYear());
-    set.add(year);
-    return [...set].sort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [years, year]);
+  const yearOptions = useYearOptions(years, year);
 
   const panelEntries = panelDate ? (byDate.get(panelDate) ?? []) : [];
 
