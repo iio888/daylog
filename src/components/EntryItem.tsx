@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { Entry } from "../types";
 import { backend } from "../backend";
 import { MAX_ENTRY_LEN, timeOf } from "../parse";
@@ -8,10 +8,12 @@ interface Props {
   entry: Entry;
   /** 任何修改/删除完成后通知父组件刷新 */
   onChanged: () => void;
+  /** 额外的操作按钮，排在编辑/删除之前（回顾页搜索结果用它放"在日历中定位"） */
+  extraOps?: ReactNode;
 }
 
 /** 单条记录：原文显示（不格式化），悬停出现编辑/删除，删除为行内二次确认 */
-export default function EntryItem({ entry, onChanged }: Props) {
+export default function EntryItem({ entry, onChanged, extraOps }: Props) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false); // 请求在途时锁住按钮，避免连点写两次
@@ -82,6 +84,7 @@ export default function EntryItem({ entry, onChanged }: Props) {
           </>
         ) : (
           <>
+            {extraOps}
             <button className="op" onClick={() => setEditing(true)}>编辑</button>
             {confirming ? (
               <button className="op del" disabled={busy} onClick={() => void doDelete()} onMouseLeave={() => setConfirming(false)}>

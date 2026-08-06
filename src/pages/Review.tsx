@@ -248,10 +248,16 @@ export default function Review({ active, focusSearchSignal }: Props) {
               <div key={g.date}>
                 <div className="sr-day">{g.date}</div>
                 {g.list.map((e) => (
-                  <div key={e.id} className="entry" onClick={() => jumpTo(e)} title="点击跳转到所在月份">
-                    <time>{timeOf(e.created_at)}</time>
-                    <div className="txt">{e.content}</div>
-                  </div>
+                  <EntryItem
+                    key={e.id}
+                    entry={e}
+                    onChanged={onDataChanged}
+                    extraOps={
+                      <button className="op" title="在日历中定位这一天" onClick={() => jumpTo(e)}>
+                        定位
+                      </button>
+                    }
+                  />
                 ))}
               </div>
             ))
@@ -271,7 +277,16 @@ export default function Review({ active, focusSearchSignal }: Props) {
               <div
                 key={c.key}
                 className={`cell${c.date === today ? " today" : ""}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${c.date}，${byDate.get(c.date)?.length ?? 0} 条记录`}
                 onClick={() => setPanelDate(c.date)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault(); // 空格默认是滚动
+                    setPanelDate(c.date);
+                  }
+                }}
               >
                 <span className="d">{c.label}</span>
                 {(byDate.get(c.date) ?? []).slice(0, 3).map((e) => (
