@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 主 crate 依赖 tauri，编译需要这些系统库；装上之后 Linux runner
+      # 就能编译测试整个 src-tauri，不必为此开 Windows runner
+      - name: 安装 Tauri 的系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev \
+            libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # 不跑 cargo fmt --check：这份代码是手写排版的，rustfmt 会把一批与本次
+      # 改动无关的行重排。要不要统一风格是独立的一次决定，不该由 CI 顺手带出来。
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      # db-tests 不依赖 tauri，编译快得多；保留它是为了在装不上 webkit 的
+      # 机器上也能跑数据层测试，这里顺带确认它没有随 db.rs 的改动烂掉
+      - run: cargo test --manifest-path src-tauri/db-tests/Cargo.toml

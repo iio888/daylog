@@ -25,7 +25,7 @@ npm run tauri build
 | 形态 | 路径 | 体积 | 适用 |
 |---|---|---|---|
 | **绿色单 exe** | `src-tauri\target\release\DayLog.exe` | ~10MB | 免安装、可放 U 盘；依赖目标机已装 WebView2 |
-| **离线安装包** | `src-tauri\target\release\bundle\nsis\DayLog_0.1.0_x64-setup.exe` | ~140MB | 内嵌 WebView2 离线安装器，**完全断网的干净机器**也能装 |
+| **离线安装包** | `src-tauri\target\release\bundle\nsis\DayLog_<版本号>_x64-setup.exe` | ~140MB | 内嵌 WebView2 离线安装器，**完全断网的干净机器**也能装 |
 
 > NSIS 安装包内嵌 WebView2 由 `tauri.conf.json` 的 `bundle.windows.webviewInstallMode = offlineInstaller` 决定——这是「离线环境也能装」的关键，体积换可靠。
 

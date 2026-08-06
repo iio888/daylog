@@ -476,10 +476,9 @@ pub fn run() {
             let dir = data_dir(app.handle())?;
             app.manage(Dirs { data: dir.clone() });
             let db_path = dir.join("daylog.db");
-            let conn = Connection::open(&db_path).map_err(|e| {
+            let conn = Connection::open(&db_path).inspect_err(|_| {
                 // 数据库损坏时备份原文件再重建，避免启动失败
                 let _ = std::fs::copy(&db_path, dir.join("daylog.db.bak"));
-                e
             })?;
             db::init(&conn)?;
             app.manage(Db(Mutex::new(conn)));
