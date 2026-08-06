@@ -24,6 +24,10 @@ export default function App() {
     const order: Page[] = PAGES.map((p) => p.id);
     function onKey(e: KeyboardEvent) {
       if (!e.ctrlKey) return;
+      // 正在输入框里打字时不劫持（与回顾页的 ←/→ 翻月同一条规则）：
+      // 记录页写到一半习惯性按 Ctrl+F 会被抢走焦点、跳到回顾页
+      const t = e.target as HTMLElement;
+      if (t.matches("input, textarea, select")) return;
       if (e.key === "Tab") {
         // 在三页之间循环（Shift 反向）；不劫持普通 Tab，故不影响表单内焦点移动
         setPage((p) => {
