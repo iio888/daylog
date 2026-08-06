@@ -12,29 +12,67 @@ pub struct Entry {
     pub updated_at: String,
 }
 
-pub fn init(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS entries (
-            id         TEXT PRIMARY KEY,
-            content    TEXT NOT NULL,
-            tags       TEXT NOT NULL DEFAULT '[]',
-            project    TEXT,
-            entry_date TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(entry_date);
+type Migration = fn(&Connection) -> rusqlite::Result<()>;
 
-        CREATE TABLE IF NOT EXISTS reports (
-            id          TEXT PRIMARY KEY,
-            type        TEXT NOT NULL,
-            range_start TEXT NOT NULL,
-            range_end   TEXT NOT NULL,
-            template    TEXT NOT NULL,
-            content     TEXT NOT NULL,
-            created_at  TEXT NOT NULL
-        );",
-    )
+/// 索引 i 表示「从 user_version=i 升到 i+1」要做的事，数组长度就是当前的目标版本号
+/// ——不另设一个版本号常量，省掉「加了迁移忘了改常量」这类错配。
+///
+/// 以后加字段就在末尾追加一个闭包，例如：
+/// `|c| c.execute_batch("ALTER TABLE entries ADD COLUMN mood TEXT;")`
+const MIGRATIONS: &[Migration] = &[
+    // → v1：建 entries / reports 两张表，与 v1.1.0 之前的 init() 逐字一致。
+    // CREATE ... IF NOT EXISTS 天然幂等，所以这一步同时覆盖两种库：全新库照常建表；
+    // v1.1.0 及更早的老库（表已存在、只是没有 user_version）重放一遍无副作用，
+    // 只是顺手把版本号认领为 1。不需要额外去嗅探 sqlite_master 判断新旧。
+    |conn| {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS entries (
+                id         TEXT PRIMARY KEY,
+                content    TEXT NOT NULL,
+                tags       TEXT NOT NULL DEFAULT '[]',
+                project    TEXT,
+                entry_date TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(entry_date);
+
+            CREATE TABLE IF NOT EXISTS reports (
+                id          TEXT PRIMARY KEY,
+                type        TEXT NOT NULL,
+                range_start TEXT NOT NULL,
+                range_end   TEXT NOT NULL,
+                template    TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            );",
+        )
+    },
+];
+
+pub fn init(conn: &Connection) -> rusqlite::Result<()> {
+    // 用户可能同时用 DB Browser 之类的工具开着这个库，别一撞锁就报错退出
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    migrate(conn, MIGRATIONS)
+}
+
+/// 按 user_version 补跑差量迁移。每步各自一个事务：DDL 在 SQLite 里是事务性的，
+/// 迁移失败会连同版本号推进一起回滚，不会留下「跑了一半却记成已升级」的库。
+///
+/// 单独接收 migrations 而不是直接读 MIGRATIONS，是为了能用测试专属的小数组
+/// 验证「只补跑差量」——否则要等真加了第二个迁移才测得到。
+fn migrate(conn: &Connection, migrations: &[Migration]) -> rusqlite::Result<()> {
+    let mut version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    while (version as usize) < migrations.len() {
+        // unchecked_transaction 只要 &self；Connection::transaction 需要 &mut，
+        // 会牵连 db.rs 全部函数签名。本项目单连接、外层 Mutex 串行，不存在嵌套事务。
+        let tx = conn.unchecked_transaction()?;
+        migrations[version as usize](&tx)?;
+        version += 1;
+        tx.pragma_update(None, "user_version", version)?;
+        tx.commit()?;
+    }
+    Ok(())
 }
 
 fn now_iso() -> String {
@@ -248,6 +286,89 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         init(&conn).unwrap();
         conn
+    }
+
+    fn user_version(conn: &Connection) -> i32 {
+        conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn fresh_db_is_at_latest_version() {
+        let conn = mem();
+        assert_eq!(user_version(&conn), MIGRATIONS.len() as i32);
+    }
+
+    /// v1.1.0 及更早版本装出去的库：表都在，user_version 还是默认的 0。
+    /// 升级后必须就地认领为 v1，且一条记录都不能丢。
+    #[test]
+    fn legacy_db_without_user_version_is_claimed_in_place() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE entries (
+                id TEXT PRIMARY KEY, content TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]',
+                project TEXT, entry_date TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE reports (
+                id TEXT PRIMARY KEY, type TEXT NOT NULL, range_start TEXT NOT NULL,
+                range_end TEXT NOT NULL, template TEXT NOT NULL, content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO entries VALUES ('e1','老库里的记录','[\"会议\"]',NULL,'2026-01-01','t','t');",
+        )
+        .unwrap();
+        assert_eq!(user_version(&conn), 0);
+
+        init(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), 1);
+        let kept = list_range(&conn, "2026-01-01", "2026-01-01").unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].content, "老库里的记录");
+        assert_eq!(kept[0].tags, vec!["会议"]);
+    }
+
+    #[test]
+    fn migrate_runs_only_the_missing_steps() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static RAN: AtomicUsize = AtomicUsize::new(0);
+
+        let conn = Connection::open_in_memory().unwrap();
+        let steps: &[Migration] = &[
+            |_| panic!("已经在 v1，第 0 步不该再跑"),
+            |c| {
+                RAN.fetch_add(1, Ordering::SeqCst);
+                c.execute_batch("CREATE TABLE step2 (x TEXT);")
+            },
+        ];
+        conn.pragma_update(None, "user_version", 1).unwrap();
+
+        migrate(&conn, steps).unwrap();
+
+        assert_eq!(RAN.load(Ordering::SeqCst), 1);
+        assert_eq!(user_version(&conn), 2);
+        // 幂等：再跑一次不该重复执行（否则 CREATE TABLE 会报表已存在）
+        migrate(&conn, steps).unwrap();
+        assert_eq!(RAN.load(Ordering::SeqCst), 1);
+    }
+
+    /// 迁移失败必须连版本号一起回滚，不能留下「记成升过了、其实没升」的库
+    #[test]
+    fn failed_migration_rolls_back_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        let steps: &[Migration] = &[|c| {
+            c.execute_batch("CREATE TABLE half (x TEXT);")?;
+            c.execute_batch("这不是合法 SQL")
+        }];
+        assert!(migrate(&conn, steps).is_err());
+        assert_eq!(user_version(&conn), 0);
+        let leftover: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'half'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(leftover, 0);
     }
 
     #[test]
