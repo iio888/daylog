@@ -135,7 +135,7 @@ const WRITE_SYSTEM = (typeLabel: string, range: string, freeSections: boolean) =
     freeSections ? "\n补充：本次章节清单为空，你可以自拟 heading；除此之外全部规则不变。" : ""
   }`;
 
-interface NumberedRecord {
+export interface NumberedRecord {
   n: number;
   date: string;
   /** "[3] 2026-06-03 09:12 内容原文" */
@@ -143,7 +143,7 @@ interface NumberedRecord {
 }
 
 /** 编号全局连续、跨批次唯一——合并阶段的 refs 才有意义 */
-function numberRecords(entries: Entry[]): { recs: NumberedRecord[]; notes: string[] } {
+export function numberRecords(entries: Entry[]): { recs: NumberedRecord[]; notes: string[] } {
   let truncated = 0;
   const recs = entries.map((e, i) => {
     let content = e.content;
@@ -164,7 +164,7 @@ function numberRecords(entries: Entry[]): { recs: NumberedRecord[]; notes: strin
 }
 
 /** 优先按天切；单天本身超预算时在天内按条切；永不切开一条记录（宁可超出一条）。 */
-function buildBatches(recs: NumberedRecord[]): { batches: NumberedRecord[][]; notes: string[] } {
+export function buildBatches(recs: NumberedRecord[]): { batches: NumberedRecord[][]; notes: string[] } {
   const total = recs.reduce((s, r) => s + r.text.length + 1, 0);
   if (total <= BASE_BATCH_CHARS) return { batches: [recs], notes: [] };
 
@@ -210,7 +210,7 @@ function sectionListBlock(outline: MdOutline): string {
 
 const str = (v: unknown, limit: number) => String(v ?? "").trim().slice(0, limit);
 
-function cleanRefs(raw: unknown, maxRef: number): number[] {
+export function cleanRefs(raw: unknown, maxRef: number): number[] {
   if (!Array.isArray(raw)) return [];
   const set = new Set<number>();
   for (const v of raw) {
@@ -259,7 +259,7 @@ function toDrafts(raw: unknown, maxRef: number): WorkItemDraft[] {
     .slice(0, MAX_DRAFTS_PER_BATCH);
 }
 
-function toWorkSummary(raw: unknown, entries: Entry[]): WorkSummary {
+export function toWorkSummary(raw: unknown, entries: Entry[]): WorkSummary {
   const o = raw as { overview?: unknown; sections?: unknown };
   const maxRef = entries.length;
 
