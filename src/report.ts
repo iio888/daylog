@@ -448,12 +448,25 @@ export function exportBaseName(type: ReportType, range: { start: string; end: st
 
 /** Markdown → 去格式纯文本（复制纯文本用） */
 export function mdToPlain(md: string): string {
-  return md
-    .replace(/^#{1,6}\s*/gm, "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/^- /gm, "")
-    .replace(/`([^`]+)`/g, "$1");
+  const out: string[] = [];
+  for (const raw of md.split("\n")) {
+    // 表格分隔行 |---|:--:| 整行丢掉（含 -- 且全是表格符号，光秃秃的 --- 分割线不算）
+    if (raw.includes("|") && /^\s*\|?[\s|:-]*-{2,}[\s|:-]*\|?\s*$/.test(raw)) continue;
+    // 表格数据行：去掉首尾竖线，中间竖线压成两个空格
+    const line = /^\s*\|.*\|\s*$/.test(raw)
+      ? raw.trim().slice(1, -1).split("|").map((c) => c.trim()).join("  ")
+      : raw;
+    out.push(
+      line
+        .replace(/^#{1,6}\s*/, "")
+        .replace(/^>\s?/, "") // 引用块：AI 总结的文末注记、模板限制告警都用它
+        .replace(/^- /, "")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\*([^*]+)\*/g, "$1")
+        .replace(/`([^`]+)`/g, "$1"),
+    );
+  }
+  return out.join("\n");
 }
 
 /** 独立 HTML（内联样式，可直接发邮件/转 PDF） */
