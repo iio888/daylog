@@ -7,6 +7,16 @@ use tauri::{Manager, State};
 
 struct Db(Mutex<Connection>);
 
+/// AI 请求的取消信号。前端点「取消」时 notify_waiters，在途的 ai_chat 立刻放弃等待。
+/// 用 Notify 而不是 oneshot：oneshot 的发送端一旦被下一次请求顶掉，
+/// 旧请求会收到 RecvError 而被误判为取消。
+#[derive(Default)]
+struct AiCancel(tokio::sync::Notify);
+
+/// 与前端 src/ai.ts 的 CANCELLED 常量必须逐字一致——isCancelled 靠它区分
+/// 「出错」和「用户主动放弃」，后者不该弹错误提示、也不该触发重试。
+const AI_CANCELLED: &str = "__daylog_cancelled__";
+
 /// 数据根目录（db、templates/、exports/ 的父目录）
 struct Dirs {
     data: std::path::PathBuf,
@@ -303,7 +313,12 @@ fn trunc(s: &str) -> String {
 /// 本地模型（Ollama 等）与云端（填对应 Base URL + Key）共用同一协议。
 /// 提示词构造在前端（src/ai.ts），这里只做 HTTP。
 #[tauri::command]
-async fn ai_chat(dirs: State<'_, Dirs>, system: String, user: String) -> CmdResult<String> {
+async fn ai_chat(
+    dirs: State<'_, Dirs>,
+    cancel: State<'_, AiCancel>,
+    system: String,
+    user: String,
+) -> CmdResult<String> {
     let path = dirs.data.join("settings.json");
     let raw = std::fs::read_to_string(&path).map_err(|_| "尚未配置 AI 服务".to_string())?;
     let v: serde_json::Value = serde_json::from_str(&raw).map_err(err)?;
@@ -338,16 +353,32 @@ async fn ai_chat(dirs: State<'_, Dirs>, system: String, user: String) -> CmdResu
     if let Some(k) = v["ai"]["apiKey"].as_str().map(str::trim).filter(|s| !s.is_empty()) {
         req = req.bearer_auth(k);
     }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| format!("无法连接 AI 服务（{base}）：{e}"))?;
-    let status = resp.status();
-    let text = resp.text().await.map_err(err)?;
-    if !status.is_success() {
-        return Err(format!("AI 服务 {status}：{}", trunc(&text)));
+    // 整个请求-读取过程与取消信号竞速。180s 超时仍在，但用户不必等它：
+    // 点「取消」后当前这一批立刻回来，而不是卡到超时或读完整个响应体。
+    let cancelled = cancel.0.notified();
+    tokio::pin!(cancelled);
+    let call = async {
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("无法连接 AI 服务（{base}）：{e}"))?;
+        let status = resp.status();
+        let text = resp.text().await.map_err(err)?;
+        if !status.is_success() {
+            return Err(format!("AI 服务 {status}：{}", trunc(&text)));
+        }
+        parse_chat_content(&text)
+    };
+    tokio::select! {
+        r = call => r,
+        _ = &mut cancelled => Err(AI_CANCELLED.to_string()),
     }
-    parse_chat_content(&text)
+}
+
+/// 放弃在途的 AI 请求。没有在途请求时是空操作。
+#[tauri::command]
+fn ai_cancel(cancel: State<AiCancel>) {
+    cancel.0.notify_waiters();
 }
 
 /// 解析 /chat/completions 的响应体。单独成函数是为了能脱离网络测试各种畸形响应。
@@ -434,6 +465,7 @@ pub fn run() {
             })?;
             db::init(&conn)?;
             app.manage(Db(Mutex::new(conn)));
+            app.manage(AiCancel::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -463,6 +495,7 @@ pub fn run() {
             save_settings,
             import_entries,
             ai_chat,
+            ai_cancel,
             ai_models
         ])
         .run(tauri::generate_context!())
@@ -516,6 +549,49 @@ mod tests {
         assert!(parse_models_list(r#"{"data":[]}"#).is_err());
         assert!(parse_models_list("{}").is_err());
         assert!(parse_models_list("<html>502</html>").is_err());
+    }
+
+    /// 取消必须打断在途请求，而不是等它自己结束。
+    /// 起一个接受连接后就再也不回应的 TCP 端点，模拟「模型卡住」这个真实场景：
+    /// 改之前用户点了取消也得等 180s 超时，或者等当前这一批跑完。
+    #[tokio::test]
+    async fn ai_request_is_interrupted_by_cancel() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            // 只接不答：连接建立后永远不写响应
+            let _keep = listener.accept().await;
+            std::future::pending::<()>().await;
+        });
+
+        let cancel = std::sync::Arc::new(AiCancel::default());
+        let signal = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            signal.0.notify_waiters();
+        });
+
+        let started = std::time::Instant::now();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(180))
+            .build()
+            .unwrap();
+        let req = client.get(format!("http://{addr}/hang"));
+
+        let cancelled = cancel.0.notified();
+        tokio::pin!(cancelled);
+        let call = async {
+            let resp = req.send().await.map_err(err)?;
+            resp.text().await.map_err(err)
+        };
+        let out: CmdResult<String> = tokio::select! {
+            r = call => r,
+            _ = &mut cancelled => Err(AI_CANCELLED.to_string()),
+        };
+
+        assert_eq!(out.unwrap_err(), AI_CANCELLED);
+        // 关键断言：立刻回来，而不是走到 180s 超时
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]

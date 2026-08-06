@@ -69,6 +69,8 @@ export interface Backend {
   saveSettings(settings: unknown): Promise<void>;
   /** 统一 AI 调用（提示词在 src/ai.ts 构造）。Tauri：Rust reqwest；浏览器：模拟模型 */
   aiChat(system: string, user: string): Promise<string>;
+  /** 放弃在途的 AI 请求；没有在途请求时是空操作 */
+  aiCancel(): Promise<void>;
   /** 探活并列出端点可用模型（仅 Base URL + Key，供「测试连接」用） */
   aiModels(baseUrl: string, apiKey: string): Promise<string[]>;
   /** JSON 备份导入（按 id 去重），返回实际新增条数 */
@@ -151,6 +153,7 @@ function tauriBackend(): Backend {
     getSettings: () => call("get_settings"),
     saveSettings: (settings) => call("save_settings", { settings }),
     aiChat: (system, user) => call("ai_chat", { system, user }),
+    aiCancel: () => call("ai_cancel"),
     aiModels: (baseUrl, apiKey) => call("ai_models", { baseUrl, apiKey }),
     importEntries: (entries) => call("import_entries", { entries }),
   };
@@ -369,6 +372,8 @@ function mockBackend(): Backend {
     async saveSettings(settings) {
       localStorage.setItem("daylog-settings", JSON.stringify(settings));
     },
+    // 预览模式的"请求"只是个 setTimeout，没有在途连接可打断
+    async aiCancel() {},
     async aiChat(system, user) {
       // 预览模式没有真模型：按提示词意图给出可验收的模拟响应
       await new Promise((r) => setTimeout(r, 500));

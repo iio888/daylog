@@ -88,7 +88,7 @@ export default function Report({ active }: Props) {
   const [aiError, setAiError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  // 在途的 HTTP 停不掉（ai_chat 无取消口），但可以在批次之间停下
+  // 后续批次的闸门；在途的那一批由 backend.aiCancel() 直接掐断
   const cancelRef = useRef(false);
 
   useEffect(() => {
@@ -494,8 +494,14 @@ export default function Report({ active }: Props) {
           {busy ? (progress ? `生成中…（${progress}）` : "生成中…") : "生成报告"}
         </button>
         {busy && genMode === "ai" && (
-          <button className="btn-ghost slim" onClick={() => (cancelRef.current = true)}>
-            取消（当前这段跑完后停下）
+          <button
+            className="btn-ghost slim"
+            onClick={() => {
+              cancelRef.current = true; // 后续批次不再发出
+              void backend.aiCancel().catch(() => undefined); // 在途的这一批立刻放弃
+            }}
+          >
+            取消
           </button>
         )}
 

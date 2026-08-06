@@ -39,7 +39,7 @@ const SPLIT_SYSTEM = (today: string) => `你是日志拆分助手。用户会发
 
 export async function aiSplit(text: string): Promise<SplitItem[]> {
   const today = todayStr();
-  const arr = parseAiJson<unknown>(await backend.aiChat(SPLIT_SYSTEM(today), text), "[");
+  const arr = parseAiJson<unknown>(await chat(SPLIT_SYSTEM(today), text), "[");
   if (!Array.isArray(arr) || arr.length === 0) throw new Error("AI 未拆分出任何条目");
   return arr
     .map((it) => {
@@ -306,13 +306,27 @@ export function toWorkSummary(raw: unknown, entries: Entry[]): WorkSummary {
   return { overview: sanitizeParagraph(str(o.overview, 400)), sections };
 }
 
+/**
+ * 统一的 AI 调用出口。Tauri 的 invoke 拒绝时抛出的是字符串而非 Error，
+ * 在这里归一成 Error，isCancelled 才能识别后端传回的取消哨兵。
+ */
+async function chat(system: string, user: string): Promise<string> {
+  try {
+    return await backend.aiChat(system, user);
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+}
+
 /** 传输错误与 JSON 解析失败都重试一次。stream:false 无副作用，重试安全。 */
 async function callJson<T>(system: string, user: string, open: "{" | "["): Promise<T> {
   try {
-    return parseAiJson<T>(await backend.aiChat(system, user), open);
-  } catch {
+    return parseAiJson<T>(await chat(system, user), open);
+  } catch (e) {
+    // 用户主动取消不是故障，重试等于把刚放弃的请求又发一遍
+    if (isCancelled(e)) throw e;
     await new Promise((r) => setTimeout(r, 1000));
-    return parseAiJson<T>(await backend.aiChat(system, user), open);
+    return parseAiJson<T>(await chat(system, user), open);
   }
 }
 
@@ -417,7 +431,7 @@ export async function aiFillDocxTemplate(
   if (input.length > MAX_INPUT_CHARS) input = input.slice(0, MAX_INPUT_CHARS);
   const user = `模板大纲：\n${JSON.stringify(outline)}\n\n工作记录：\n${input}`;
   const obj = parseAiJson<{ title?: unknown; sections?: unknown }>(
-    await backend.aiChat(DOCX_FILL_SYSTEM(typeLabel, range), user),
+    await chat(DOCX_FILL_SYSTEM(typeLabel, range), user),
     "{",
   );
   const sections: import("./docx").DocxFilledSection[] = Array.isArray(obj.sections)
