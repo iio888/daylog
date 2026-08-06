@@ -226,11 +226,13 @@ pub fn list_projects(conn: &Connection) -> rusqlite::Result<Vec<(String, u32)>> 
     rows.collect()
 }
 
-/// JSON 备份导入：按 id 去重合并，返回实际新增条数
+/// JSON 备份导入：按 id 去重合并，返回实际新增条数。
+/// 整批一个事务：中途失败要么全进要么全不进，不留下导入了一半的库。
 pub fn import_entries(conn: &Connection, entries: &[Entry]) -> rusqlite::Result<u32> {
+    let tx = conn.unchecked_transaction()?;
     let mut inserted = 0u32;
     for e in entries {
-        let n = conn.execute(
+        let n = tx.execute(
             "INSERT OR IGNORE INTO entries (id, content, tags, project, entry_date, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
@@ -245,10 +247,12 @@ pub fn import_entries(conn: &Connection, entries: &[Entry]) -> rusqlite::Result<
         )?;
         inserted += n as u32;
     }
+    tx.commit()?;
     Ok(inserted)
 }
 
-/// 保存生成的报告（历史最多留最近 50 份）
+/// 保存生成的报告（历史最多留最近 50 份）。
+/// 插入与裁剪同一个事务：分开提交时，两步之间崩溃会留下超过 50 份的历史。
 pub fn save_report(
     conn: &Connection,
     report_type: &str,
@@ -257,7 +261,8 @@ pub fn save_report(
     template: &str,
     content: &str,
 ) -> rusqlite::Result<()> {
-    conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
         "INSERT INTO reports (id, type, range_start, range_end, template, content, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
@@ -270,12 +275,12 @@ pub fn save_report(
             now_iso()
         ],
     )?;
-    conn.execute(
+    tx.execute(
         "DELETE FROM reports WHERE id NOT IN
          (SELECT id FROM reports ORDER BY created_at DESC, id DESC LIMIT 50)",
         [],
     )?;
-    Ok(())
+    tx.commit()
 }
 
 #[cfg(test)]
@@ -440,6 +445,29 @@ mod tests {
         let n = import_entries(&conn, &[e.clone(), new_entry]).unwrap();
         assert_eq!(n, 1);
         assert_eq!(list_range(&conn, "2026-01-01", "2026-12-31").unwrap().len(), 2);
+    }
+
+    /// 导入中途失败必须整批回滚——半批数据落库比直接失败更难收拾：
+    /// 用户不知道进了哪些，重导又会被 id 去重挡掉。
+    #[test]
+    fn import_rolls_back_on_mid_batch_failure() {
+        let conn = mem();
+        conn.execute_batch(
+            "CREATE TRIGGER boom BEFORE INSERT ON entries WHEN NEW.id = 'bad'
+             BEGIN SELECT RAISE(ABORT, '模拟写入失败'); END;",
+        )
+        .unwrap();
+        let mk = |id: &str| Entry {
+            id: id.into(),
+            content: "x".into(),
+            tags: vec![],
+            project: None,
+            entry_date: "2026-06-12".into(),
+            created_at: "2026-06-12T10:00:00+08:00".into(),
+            updated_at: "2026-06-12T10:00:00+08:00".into(),
+        };
+        assert!(import_entries(&conn, &[mk("ok1"), mk("bad"), mk("ok2")]).is_err());
+        assert!(list_range(&conn, "2026-06-12", "2026-06-12").unwrap().is_empty());
     }
 
     #[test]
