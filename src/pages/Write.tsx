@@ -21,6 +21,7 @@ export default function Write({ active }: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [entryDate, setEntryDate] = useState(today);
   const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
   const [aiReady, setAiReady] = useState(false);
   const [splitBusy, setSplitBusy] = useState(false);
   const [splitRows, setSplitRows] = useState<SplitItem[] | null>(null);
@@ -49,17 +50,21 @@ export default function Write({ active }: Props) {
   }, [refreshAiReady]);
 
   async function save() {
+    if (saving) return; // 连点两下保存 / 连按两次 Ctrl+Enter 会存成两条
     const v = text.trim();
     if (!v) return;
     if (v.length > MAX_LEN) {
       toast(`超出长度上限（${MAX_LEN} 字符）`);
       return;
     }
+    setSaving(true);
     try {
       await backend.add(v, entryDate);
     } catch (e) {
       toast(`保存失败：${e instanceof Error ? e.message : e}`);
       return;
+    } finally {
+      setSaving(false);
     }
     setText("");
     toast(entryDate === today ? "已保存" : `已补记到 ${entryDate}`);
@@ -129,7 +134,7 @@ export default function Write({ active }: Props) {
             title={isToday ? "记录到今天；可改为过去日期补记" : "正在补记到过去日期"}
             onChange={(e) => setEntryDate(e.target.value || today)}
           />
-          <button className="btn-primary" onClick={() => void save()}>
+          <button className="btn-primary" disabled={saving} onClick={() => void save()}>
             保存
           </button>
         </div>

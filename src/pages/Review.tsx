@@ -39,6 +39,7 @@ export default function Review({ active, focusSearchSignal }: Props) {
   const [panelDate, setPanelDate] = useState<string | null>(null);
   const [addText, setAddText] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const backfilling = useRef(false); // 连按两次 Ctrl+Enter 会补记成两条
 
   // 搜索框里混写自由文本与 #标签 / @项目，在此拆出三类过滤条件
   const { qText, qTag, qProject } = useMemo(() => {
@@ -156,13 +157,17 @@ export default function Review({ active, focusSearchSignal }: Props) {
   const panelEntries = panelDate ? (byDate.get(panelDate) ?? []) : [];
 
   async function backfill() {
+    if (backfilling.current) return;
     const v = addText.trim();
     if (!v || !panelDate) return;
+    backfilling.current = true;
     try {
       await backend.add(v, panelDate);
     } catch (e) {
       toast(`保存失败：${e instanceof Error ? e.message : e}`);
       return;
+    } finally {
+      backfilling.current = false;
     }
     setAddText("");
     toast(`已补记到 ${panelDate}`);
