@@ -25,6 +25,7 @@ import {
   renderWorkSummary,
   wrapHtml,
 } from "../report";
+import ReportHistoryModal from "../components/ReportHistoryModal";
 import {
   directFill,
   docxFilledToMarkdown,
@@ -85,6 +86,7 @@ export default function Report({ active }: Props) {
   const [genMode, setGenMode] = useState<"direct" | "ai">("direct");
   const [aiReady, setAiReady] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   // 在途的 HTTP 停不掉（ai_chat 无取消口），但可以在批次之间停下
   const cancelRef = useRef(false);
@@ -531,6 +533,8 @@ export default function Report({ active }: Props) {
           )}
         </div>
         <div className="report-actions">
+          <button className="btn-ghost" onClick={() => setHistoryOpen(true)}>历史报告</button>
+          <div className="grow" />
           <button className="btn-ghost" onClick={() => void doCopy("md")}>复制 Markdown</button>
           <button className="btn-ghost" onClick={() => void doCopy("plain")}>复制纯文本</button>
           {docxBytes && (
@@ -541,6 +545,19 @@ export default function Report({ active }: Props) {
           <button className="btn-ghost" onClick={doPrint}>打印 / PDF</button>
         </div>
       </div>
+
+      {historyOpen && (
+        <ReportHistoryModal
+          onClose={() => setHistoryOpen(false)}
+          onLoad={(r) => {
+            setMd(r.content);
+            setTab("render");
+            setDocxBytes(null); // 历史里没存 .docx 字节，别让「导出 .docx」误用上一次的
+            setHistoryOpen(false);
+            toast(`已载入 ${r.created_at.slice(5, 10)} 生成的报告`);
+          }}
+        />
+      )}
     </div>
   );
 }

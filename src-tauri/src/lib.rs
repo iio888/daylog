@@ -261,6 +261,19 @@ fn save_report(
         .map_err(err)
 }
 
+/// 生成历史（最近的在前，最多 50 份）
+#[tauri::command]
+fn list_reports(state: State<Db>) -> CmdResult<Vec<db::ReportRecord>> {
+    let conn = state.0.lock().map_err(err)?;
+    db::list_reports(&conn).map_err(err)
+}
+
+#[tauri::command]
+fn delete_report(state: State<Db>, id: String) -> CmdResult<()> {
+    let conn = state.0.lock().map_err(err)?;
+    db::delete_report(&conn, &id).map_err(err)
+}
+
 #[tauri::command]
 fn get_settings(dirs: State<Dirs>) -> CmdResult<serde_json::Value> {
     let path = dirs.data.join("settings.json");
@@ -444,6 +457,8 @@ pub fn run() {
             set_export_dir,
             open_dir,
             save_report,
+            list_reports,
+            delete_report,
             get_settings,
             save_settings,
             import_entries,

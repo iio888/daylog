@@ -275,7 +275,19 @@ main { flex: 1; overflow: auto; display: flex; flex-direction: column; }
   resize: none; line-height: 1.7;
   font-family: ui-monospace, Consolas, monospace; font-size: calc(var(--fs) - 1px);
 }
-.report-actions { display: flex; gap: 8px; padding: 12px 20px 16px; flex-wrap: wrap; }
+.report-actions { display: flex; gap: 8px; padding: 12px 20px 16px; flex-wrap: wrap; align-items: center; }
+.report-actions .grow { flex: 1; }
+
+/* 历史报告弹窗 */
+.rh-list { max-height: 46vh; overflow: auto; margin-bottom: 10px; }
+.rh-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.rh-item:last-child { border-bottom: none; }
+.rh-main {
+  flex: 1; display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  background: none; border: none; padding: 4px 6px; border-radius: 6px; cursor: pointer; text-align: left;
+}
+.rh-main:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.rh-title { color: var(--text); }
 
 /* ---------- 自动补全 ---------- */
 .ac-wrap { position: relative; display: flex; flex-direction: column; flex: 1; }

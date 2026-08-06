@@ -9,6 +9,19 @@ import { parseProject, parseTags } from "./parse";
 /** 搜索结果条数上限，与 src-tauri/src/db.rs 的 query() LIMIT 一致；命中上限时 UI 需提示已截断 */
 export const SEARCH_LIMIT = 500;
 
+/** 一份生成过的报告。字段名与 reports 表逐字一致，方便直接对照 SQL */
+export interface ReportRecord {
+  id: string;
+  type: string;
+  range_start: string;
+  range_end: string;
+  /** 生成时所用模板的展示名 */
+  template: string;
+  /** 报告正文（Markdown）。Word 模板生成的只存文字，不含 .docx 二进制 */
+  content: string;
+  created_at: string;
+}
+
 export interface Backend {
   add(content: string, entryDate: string): Promise<Entry>;
   listRange(start: string, end: string): Promise<Entry[]>;
@@ -47,6 +60,9 @@ export interface Backend {
   /** 弹出文件夹选择框，返回所选路径；取消返回 null（浏览器用输入框兜底） */
   pickExportDir(current: string): Promise<string | null>;
   saveReport(type: string, start: string, end: string, template: string, content: string): Promise<void>;
+  /** 生成历史，最近的在前（最多 50 份，由后端裁剪） */
+  listReports(): Promise<ReportRecord[]>;
+  deleteReport(id: string): Promise<void>;
 
   /* ---- M3：设置与 AI ---- */
   getSettings(): Promise<unknown>;
@@ -130,6 +146,8 @@ function tauriBackend(): Backend {
     },
     saveReport: (reportType, rangeStart, rangeEnd, template, content) =>
       call("save_report", { reportType, rangeStart, rangeEnd, template, content }),
+    listReports: () => call("list_reports"),
+    deleteReport: (id) => call("delete_report", { id }),
     getSettings: () => call("get_settings"),
     saveSettings: (settings) => call("save_settings", { settings }),
     aiChat: (system, user) => call("ai_chat", { system, user }),
@@ -320,10 +338,28 @@ function mockBackend(): Backend {
       const v = window.prompt("输入导出目录的完整路径（浏览器预览仅作记录，实际下载位置由浏览器决定）", current);
       return v && v.trim() ? v.trim() : null;
     },
+    // 字段名必须与 reports 表一致（range_start / range_end）：此前写成 start / end，
+    // 因为一直没人读所以没暴露，现在有历史列表了，写错就是读出来一片 undefined
     async saveReport(type, start, end, template, content) {
-      const list: unknown[] = JSON.parse(localStorage.getItem("daylog-reports") ?? "[]");
-      list.push({ id: genId(), type, start, end, template, content, created_at: new Date().toISOString() });
+      const list: ReportRecord[] = JSON.parse(localStorage.getItem("daylog-reports") ?? "[]");
+      list.push({
+        id: genId(),
+        type,
+        range_start: start,
+        range_end: end,
+        template,
+        content,
+        created_at: new Date().toISOString(),
+      });
       localStorage.setItem("daylog-reports", JSON.stringify(list.slice(-50)));
+    },
+    async listReports() {
+      const list: ReportRecord[] = JSON.parse(localStorage.getItem("daylog-reports") ?? "[]");
+      return list.slice().reverse(); // 最近的在前
+    },
+    async deleteReport(id) {
+      const list: ReportRecord[] = JSON.parse(localStorage.getItem("daylog-reports") ?? "[]");
+      localStorage.setItem("daylog-reports", JSON.stringify(list.filter((r) => r.id !== id)));
     },
 
     /* ---- M3：设置与 AI（浏览器实现） ---- */

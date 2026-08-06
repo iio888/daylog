@@ -251,6 +251,45 @@ pub fn import_entries(conn: &Connection, entries: &[Entry]) -> rusqlite::Result<
     Ok(inserted)
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ReportRecord {
+    pub id: String,
+    /// daily | weekly | monthly | quarterly | yearly
+    pub r#type: String,
+    pub range_start: String,
+    pub range_end: String,
+    /// 生成时所用模板的展示名
+    pub template: String,
+    /// 报告正文（Markdown）。Word 模板生成的历史只存文字，不含 .docx 二进制
+    pub content: String,
+    pub created_at: String,
+}
+
+fn report_from_row(row: &Row) -> rusqlite::Result<ReportRecord> {
+    Ok(ReportRecord {
+        id: row.get("id")?,
+        r#type: row.get("type")?,
+        range_start: row.get("range_start")?,
+        range_end: row.get("range_end")?,
+        template: row.get("template")?,
+        content: row.get("content")?,
+        created_at: row.get("created_at")?,
+    })
+}
+
+/// 生成历史，最近的在前。created_at 只精确到秒，同一秒生成的多份靠 rowid
+/// （即插入顺序）兜底——用 id 兜底的话顺序取决于 uuid 大小，等于随机。
+pub fn list_reports(conn: &Connection) -> rusqlite::Result<Vec<ReportRecord>> {
+    let mut stmt = conn.prepare("SELECT * FROM reports ORDER BY created_at DESC, rowid DESC")?;
+    let rows = stmt.query_map([], report_from_row)?;
+    rows.collect()
+}
+
+pub fn delete_report(conn: &Connection, id: &str) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM reports WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
 /// 保存生成的报告（历史最多留最近 50 份）。
 /// 插入与裁剪同一个事务：分开提交时，两步之间崩溃会留下超过 50 份的历史。
 pub fn save_report(
@@ -277,7 +316,7 @@ pub fn save_report(
     )?;
     tx.execute(
         "DELETE FROM reports WHERE id NOT IN
-         (SELECT id FROM reports ORDER BY created_at DESC, id DESC LIMIT 50)",
+         (SELECT id FROM reports ORDER BY created_at DESC, rowid DESC LIMIT 50)",
         [],
     )?;
     tx.commit()
@@ -478,6 +517,29 @@ mod tests {
         }
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM reports", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 50);
+    }
+
+    #[test]
+    fn list_and_delete_reports() {
+        let conn = mem();
+        save_report(&conn, "weekly", "2026-06-08", "2026-06-14", "内置周报", "第一份").unwrap();
+        save_report(&conn, "monthly", "2026-06-01", "2026-06-30", "内置月报", "第二份").unwrap();
+
+        let list = list_reports(&conn).unwrap();
+        assert_eq!(list.len(), 2);
+        // 两份都在同一秒生成，这里正是在验证 rowid 兜底：换成 id 兜底会随机翻转
+        assert_eq!(list[0].content, "第二份");
+        assert_eq!(list[0].r#type, "monthly");
+        assert_eq!(list[0].range_start, "2026-06-01");
+        assert_eq!(list[0].template, "内置月报");
+
+        delete_report(&conn, &list[0].id).unwrap();
+        let left = list_reports(&conn).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].content, "第一份");
+
+        // 删不存在的 id 不算错——用户可能在两个窗口里各删一次
+        assert!(delete_report(&conn, "没有这个 id").is_ok());
     }
 
     #[test]
