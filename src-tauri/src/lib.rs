@@ -257,6 +257,24 @@ fn open_dir(dirs: State<Dirs>, kind: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// 用系统默认浏览器打开一个 https 链接（「检查更新」用）。
+/// 复用 open_dir 那套 per-OS Command，不为一颗按钮引入 opener 插件；
+/// 只放行 https，避免以后有人把任意字符串传进来当命令跑。
+#[tauri::command]
+fn open_url(url: String) -> CmdResult<()> {
+    if !url.starts_with("https://") {
+        return Err(format!("只允许打开 https 链接：{url}"));
+    }
+    #[cfg(target_os = "windows")]
+    let cmd = "explorer";
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let cmd = "xdg-open";
+    std::process::Command::new(cmd).arg(&url).spawn().map_err(err)?;
+    Ok(())
+}
+
 #[tauri::command]
 fn save_report(
     state: State<Db>,
@@ -488,6 +506,7 @@ pub fn run() {
             get_export_dir,
             set_export_dir,
             open_dir,
+            open_url,
             save_report,
             list_reports,
             delete_report,

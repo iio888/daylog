@@ -327,6 +327,7 @@ main { flex: 1; overflow: auto; display: flex; flex-direction: column; }
 }
 .modal .row input:focus, .modal .row select:focus { border-color: var(--accent); }
 .modal .row.end { justify-content: flex-end; margin-top: 16px; }
+.modal .row .grow { flex: 1; }
 /* 取消 / 保存 等宽等高 */
 .modal .footer-actions button { min-width: 88px; padding: 7px 0; text-align: center; }
 .modal .seg { margin-bottom: 10px; }

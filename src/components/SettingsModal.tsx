@@ -7,6 +7,9 @@ import { todayStr } from "../parse";
 import { toast } from "../toast";
 import type { Entry } from "../types";
 
+/** 「检查更新」只是打开这个页面，不做应用内检查——需求 3.6 定的就是这个形态 */
+const RELEASES_URL = "https://github.com/iio888/daylog/releases";
+
 interface Props {
   onClose: () => void;
 }
@@ -214,7 +217,21 @@ export default function SettingsModal({ onClose }: Props) {
         </div>
 
         <h4>关于</h4>
-        <div className="row hint">DayLog v0.1.0 · 本地优先 · 无遥测</div>
+        <div className="row">
+          <span className="hint">DayLog v{__APP_VERSION__} · 本地优先 · 无遥测</span>
+          <div className="grow" />
+          <button
+            className="btn-ghost slim"
+            title="在浏览器中打开 Releases 页面；不做应用内自动检查，也就没有任何后台联网"
+            onClick={() =>
+              void backend
+                .openUrl(RELEASES_URL)
+                .catch((e) => toast(`${e instanceof Error ? e.message : e}`))
+            }
+          >
+            检查更新
+          </button>
+        </div>
 
         <div className="row end footer-actions">
           <button className="btn-ghost" onClick={cancel}>取消</button>

@@ -65,3 +65,17 @@ npm run tauri icon src-tauri/icon-source.png
 ## 7. 代码签名（可选，后续）
 
 未签名的 exe 在 SmartScreen 下会有「未知发布者」提示。如需消除，购买代码签名证书后在 `tauri.conf.json` 的 `bundle.windows` 配置 `certificateThumbprint` / `signCommand`。v1.0 暂不签名。
+
+## 8. 发版流程（版本号只改一处）
+
+`src-tauri/tauri.conf.json` 的 `version` 指向 `../package.json`（Tauri 官方支持
+的写法），`vite.config.ts` 也把 `package.json` 的版本号注入成 `__APP_VERSION__`
+供「关于」面板显示。所以：
+
+1. 只改 `package.json` 的 `version` 一处。
+2. `npm run tauri build` 产出的安装包文件名、exe 的文件属性、设置页「关于」
+   显示的版本号都会自动跟上。
+3. 打 tag 时与 `package.json` 保持一致（`git tag v1.2.0`）。
+
+以前 `package.json` 与 `tauri.conf.json` 各写死一份版本号，「关于」面板里
+还硬编码着第三份——发到 v1.1.0 时那里仍写着 v0.1.0。

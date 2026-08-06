@@ -53,6 +53,8 @@ export interface Backend {
   exportBytes(filename: string, bytes: Uint8Array): Promise<string | null>;
   /** 打开数据/模板/导出目录（仅桌面版有效） */
   openDir(kind: "data" | "templates" | "exports"): Promise<void>;
+  /** 用系统默认浏览器打开一个 https 链接 */
+  openUrl(url: string): Promise<void>;
   /** 当前导出目录的完整路径（供展示） */
   getExportDir(): Promise<string>;
   /** 设置导出目录；传空字符串恢复默认 */
@@ -139,6 +141,7 @@ function tauriBackend(): Backend {
     exportBytes: (filename, bytes) =>
       call<string>("export_report_bytes", { filename, dataB64: bytesToB64(bytes) }),
     openDir: (kind) => call("open_dir", { kind }),
+    openUrl: (url) => call("open_url", { url }),
     getExportDir: () => call("get_export_dir"),
     setExportDir: (dir) => call("set_export_dir", { dir }),
     async pickExportDir(current) {
@@ -328,6 +331,9 @@ function mockBackend(): Backend {
     },
     async openDir() {
       throw new Error("浏览器预览模式不支持打开本地目录（桌面版可用）");
+    },
+    async openUrl(url) {
+      window.open(url, "_blank", "noopener");
     },
     async getExportDir() {
       return localStorage.getItem("daylog-export-dir") || "浏览器默认下载目录";
