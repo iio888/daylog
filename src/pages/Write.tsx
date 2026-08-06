@@ -28,15 +28,16 @@ export default function Write({ active }: Props) {
   // 跨零点后日期选择器跟到新的一天；已手动改成补记的日期不动
   useFollowToday(today, setEntryDate);
 
+  // 下方列表跟着日期选择器走：切到补记日期就看那天的事项
   const reload = useCallback(async () => {
-    setEntries(await backend.listRange(today, today));
-  }, [today]);
+    setEntries(await backend.listRange(entryDate, entryDate));
+  }, [entryDate]);
 
   const refreshAiReady = useCallback(() => {
     void loadSettings().then((s) => setAiReady(aiConfigured(s)));
   }, []);
 
-  // 变为可见时刷新（其他页面可能补记了今天）；跨天后 reload 变化也会重新拉取
+  // 变为可见时刷新（其他页面可能改了这天）；切日期/跨天后 reload 变化也会重新拉取
   useEffect(() => {
     if (active) void reload();
   }, [active, reload]);
@@ -135,11 +136,11 @@ export default function Write({ active }: Props) {
       </div>
 
       <div className="day-head">
-        <h3>今天</h3>
+        <h3>{isToday ? "今天" : entryDate}</h3>
         <span className="hint">{entries.length} 条</span>
       </div>
       {entries.length === 0 ? (
-        <div className="empty">今天还没有记录</div>
+        <div className="empty">{isToday ? "今天还没有记录" : "这天还没有记录"}</div>
       ) : (
         [...entries]
           .reverse()
