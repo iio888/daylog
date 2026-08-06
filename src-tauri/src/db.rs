@@ -122,6 +122,12 @@ pub fn delete(conn: &Connection, id: &str) -> rusqlite::Result<()> {
 
 /// 搜索/过滤的统一入口：q 对正文 LIKE，tag/project 匹配，条件可叠加。
 /// 均大小写不敏感（content/tags 走 LIKE 默认 ASCII 不区分大小写，project 加 COLLATE NOCASE）。
+/// 转义 LIKE 的通配符。反斜杠必须先转，否则后两步引入的 `\` 会被自己再转一次。
+/// 调用方必须配上 `ESCAPE '\'`，否则这里插入的反斜杠会被当成要匹配的普通字符。
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
 pub fn query(
     conn: &Connection,
     q: Option<&str>,
@@ -131,13 +137,13 @@ pub fn query(
     let mut sql = String::from("SELECT * FROM entries WHERE 1=1");
     let mut binds: Vec<String> = Vec::new();
     if let Some(q) = q.filter(|s| !s.is_empty()) {
-        sql.push_str(&format!(" AND content LIKE ?{}", binds.len() + 1));
-        binds.push(format!("%{}%", q.replace('%', "\\%").replace('_', "\\_")));
+        sql.push_str(&format!(" AND content LIKE ?{} ESCAPE '\\'", binds.len() + 1));
+        binds.push(format!("%{}%", escape_like(q)));
     }
     if let Some(t) = tag.filter(|s| !s.is_empty()) {
         // tags 为 JSON 数组文本，按完整字符串元素匹配
-        sql.push_str(&format!(" AND tags LIKE ?{}", binds.len() + 1));
-        binds.push(format!("%\"{}\"%", t));
+        sql.push_str(&format!(" AND tags LIKE ?{} ESCAPE '\\'", binds.len() + 1));
+        binds.push(format!("%\"{}\"%", escape_like(t)));
     }
     if let Some(p) = project.filter(|s| !s.is_empty()) {
         sql.push_str(&format!(" AND project = ?{} COLLATE NOCASE", binds.len() + 1));
@@ -277,6 +283,23 @@ mod tests {
         assert_eq!(query(&conn, None, None, Some("支付")).unwrap().len(), 1);
         assert_eq!(query(&conn, Some("联调"), Some("进展"), Some("支付")).unwrap().len(), 1);
         assert!(query(&conn, Some("不存在"), None, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn query_treats_wildcards_as_literals() {
+        let conn = mem();
+        add(&conn, "进度到 50% 了", &[], None, "2026-06-11").unwrap();
+        add(&conn, "进度到 99% 了", &[], None, "2026-06-12").unwrap();
+        // 没有 ESCAPE 子句时这里返回 0：转义用的反斜杠会被当成要匹配的普通字符
+        assert_eq!(query(&conn, Some("50%"), None, None).unwrap().len(), 1);
+        // _ 是单字符通配符，不转义会把 "50x" 也算命中
+        add(&conn, "编号 A_1", &[], None, "2026-06-13").unwrap();
+        add(&conn, "编号 Ax1", &[], None, "2026-06-14").unwrap();
+        assert_eq!(query(&conn, Some("A_1"), None, None).unwrap().len(), 1);
+
+        add(&conn, "x", &["a_b".into()], None, "2026-06-15").unwrap();
+        add(&conn, "y", &["axb".into()], None, "2026-06-16").unwrap();
+        assert_eq!(query(&conn, None, Some("a_b"), None).unwrap().len(), 1);
     }
 
     #[test]
