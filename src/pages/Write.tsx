@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Entry } from "../types";
 import { backend } from "../backend";
+import { MAX_ENTRY_LEN } from "../parse";
 import { useFollowToday, useToday } from "../useToday";
 import { toast } from "../toast";
 import { aiConfigured, loadSettings } from "../settings";
@@ -8,8 +9,6 @@ import { aiSplit, type SplitItem } from "../ai";
 import EntryItem from "../components/EntryItem";
 import AcTextarea from "../components/AcTextarea";
 import SplitModal from "../components/SplitModal";
-
-const MAX_LEN = 10000;
 
 interface Props {
   /** 当前是否为可见页：常驻挂载下，变为可见时刷新数据 */
@@ -53,8 +52,8 @@ export default function Write({ active }: Props) {
     if (saving) return; // 连点两下保存 / 连按两次 Ctrl+Enter 会存成两条
     const v = text.trim();
     if (!v) return;
-    if (v.length > MAX_LEN) {
-      toast(`超出长度上限（${MAX_LEN} 字符）`);
+    if (v.length > MAX_ENTRY_LEN) {
+      toast(`超出长度上限（${MAX_ENTRY_LEN} 字符）`);
       return;
     }
     setSaving(true);
@@ -88,6 +87,12 @@ export default function Write({ active }: Props) {
   }
 
   async function confirmSplit(rows: SplitItem[]) {
+    // 先整体校验再入库：部分导入比直接拦下更难收拾，截断则等于丢数据
+    const bad = rows.findIndex((r) => r.content.trim().length > MAX_ENTRY_LEN);
+    if (bad >= 0) {
+      toast(`第 ${bad + 1} 条超出长度上限（${MAX_ENTRY_LEN} 字符），请缩短后再导入`);
+      return;
+    }
     try {
       for (const r of rows) await backend.add(r.content.trim(), r.date);
     } catch (e) {

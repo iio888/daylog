@@ -21,6 +21,9 @@ export function parseProject(content: string): string | null {
   return m ? m[1] : null;
 }
 
+/** 单条记录的长度上限（REQUIREMENTS 3.1）。四个写入入口共用同一个数，避免只在一处生效。 */
+export const MAX_ENTRY_LEN = 10000;
+
 export const pad2 = (n: number) => String(n).padStart(2, "0");
 
 export const fmtDate = (d: Date) =>

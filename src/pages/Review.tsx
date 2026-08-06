@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Entry } from "../types";
 import { backend } from "../backend";
-import { PROJ_RE, TAG_RE, pad2, parseProject, parseTags, timeOf } from "../parse";
+import { MAX_ENTRY_LEN, PROJ_RE, TAG_RE, pad2, parseProject, parseTags, timeOf } from "../parse";
 import { useDayChange, useToday, ymqOf } from "../useToday";
 import { toast } from "../toast";
 import EntryItem from "../components/EntryItem";
@@ -160,6 +160,10 @@ export default function Review({ active, focusSearchSignal }: Props) {
     if (backfilling.current) return;
     const v = addText.trim();
     if (!v || !panelDate) return;
+    if (v.length > MAX_ENTRY_LEN) {
+      toast(`超出长度上限（${MAX_ENTRY_LEN} 字符）`);
+      return;
+    }
     backfilling.current = true;
     try {
       await backend.add(v, panelDate);

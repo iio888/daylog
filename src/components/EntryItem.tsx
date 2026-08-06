@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Entry } from "../types";
 import { backend } from "../backend";
-import { timeOf } from "../parse";
+import { MAX_ENTRY_LEN, timeOf } from "../parse";
 import { toast } from "../toast";
 
 interface Props {
@@ -25,6 +25,10 @@ export default function EntryItem({ entry, onChanged }: Props) {
     if (busy) return;
     const v = taRef.current?.value.trim();
     if (!v) return;
+    if (v.length > MAX_ENTRY_LEN) {
+      toast(`超出长度上限（${MAX_ENTRY_LEN} 字符）`);
+      return; // 保持编辑态，让用户就地改短
+    }
     setBusy(true);
     try {
       await backend.update(entry.id, v);
