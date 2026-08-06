@@ -1,6 +1,6 @@
 # DayLog 需求文档（v1.0 定稿）
 
-> 一款本地优先的 Windows 日程记录工具：随手用自然语言记录，一键生成日报、周报、季度总结、年度总结，支持导入自定义 Markdown / Word 模板并导出为 Word。
+> 一款本地优先的 Windows 日程记录工具：随手用自然语言记录，一键生成日报、周报、月度总结、季度总结、年度总结，支持导入自定义 Markdown / Word 模板并导出为 Word。
 
 - 文档状态：已敲定，作为 v1.0 开发依据
 - 日期：2026-06-12
@@ -166,6 +166,7 @@ Tauri 构建时把全部前端资源（HTML/JS/CSS）和 SQLite（rusqlite 静�
 |---|---|---|
 | 日报 | 今天 | 任选某一天 |
 | 周报 | 本周一 ~ 今天 | 任选某一周（周一为一周起点） |
+| 月度总结 | 本月 1 号 ~ 今天 | 任选某年某月 |
 | 季度总结 | 本季度（1-3/4-6/7-9/10-12月） | 任选某季度 |
 | 年度总结 | 今年 1/1 ~ 今天 | 任选某一年 |
 
@@ -173,6 +174,7 @@ Tauri 构建时把全部前端资源（HTML/JS/CSS）和 SQLite（rusqlite 静�
 1. 选类型 → 自动带出默认时间范围（可改）。**范围调整一律通过选择器完成，不提供手动文本输入**（避免格式错误），控件随类型切换：
    - 日报：日期选择器（datepicker）选某一天
    - 周报：日期选择器点选该周内任意一天，自动换算为 周一 ~ 周日（当周则截至今天），换算结果实时回显
+   - 月度总结：年份下拉 + 月份下拉（1~12 月）
    - 季度总结：年份下拉 + 季度下拉（Q1~Q4）
    - 年度总结：年份下拉（年份范围 = 数据库中有记录的年份）
 2. 选模板（下拉，默认选中该类型的内置模板）
@@ -220,7 +222,7 @@ Tauri 构建时把全部前端资源（HTML/JS/CSS）和 SQLite（rusqlite 静�
 ```markdown
 ---
 name: 周报-汇报版
-type: weekly        # daily | weekly | quarterly | yearly | any
+type: weekly        # daily | weekly | monthly | quarterly | yearly | any
 ---
 # {{range}} 周报
 
@@ -255,7 +257,7 @@ type: weekly        # daily | weekly | quarterly | yearly | any
 | 形式 | 说明 |
 |---|---|
 | 复制到剪贴板 | Markdown 源文 / 去格式纯文本 |
-| 导出 .md 文件 | 默认文件名为英文且体现周期序号：日报 `Daily_2026-06-12.md`、周报 `Weekly_2026-W24.md`（ISO 周数）、季度 `Quarterly_2026-Q2.md`、年度 `Yearly_2026.md` |
+| 导出 .md 文件 | 默认文件名为英文且体现周期序号：日报 `Daily_2026-06-12.md`、周报 `Weekly_2026-W24.md`（ISO 周数）、月度 `Monthly_2026-06.md`、季度 `Quarterly_2026-Q2.md`、年度 `Yearly_2026.md` |
 | 导出 .html | 内联样式的独立 HTML，可直接发邮件/转 PDF |
 | 导出 .docx | 仅 Word 模板可用：把记录回填进模板，导出保留原样式与结构的 Word 文档，文件名同上（如 `Weekly_2026-W24.docx`） |
 | 导出 PDF | 调用 WebView 打印对话框（系统"另存为 PDF"），不自研 PDF 引擎 |
@@ -380,7 +382,7 @@ CREATE INDEX idx_entries_date ON entries(entry_date);
 
 CREATE TABLE reports (                  -- 生成历史（最多留最近 50 份）
   id         TEXT PRIMARY KEY,
-  type       TEXT NOT NULL,             -- daily|weekly|quarterly|yearly
+  type       TEXT NOT NULL,             -- daily|weekly|monthly|quarterly|yearly
   range_start TEXT NOT NULL,
   range_end  TEXT NOT NULL,
   template   TEXT NOT NULL,             -- 模板名快照
@@ -414,7 +416,7 @@ CREATE TABLE reports (                  -- 生成历史（最多留最近 50 份
 | 阶段 | 内容 | 验收标准 |
 |---|---|---|
 | M1 记录闭环 | 记录页 + 回顾页（月历视图）+ SQLite + 标签/项目解析 | 能记、能按月历回看（原文显示）、能搜、能改、能删、重启不丢 |
-| M2 报告闭环 | 模板系统 + 直接整理 + 复制/导出 md/html | 离线状态下四种报告全部可出 |
+| M2 报告闭环 | 模板系统 + 直接整理 + 复制/导出 md/html | 离线状态下五种报告全部可出 |
 | M3 AI 能力 | 单一 OpenAI 兼容端点 + AI 总结 + 多日拆分导入 + #/@ 自动补全（含回顾页搜索框） | 断网 + 本地 Ollama 环境下拆分导入与 AI 周报跑通；完全不配置 AI 不影响其他功能 |
 | M4 分发 | 图标/暗色模式打磨 + 单文件绿色版 exe + 离线安装包 | **断网**的干净 Win10 虚拟机：用离线安装包装上即用；Win11 虚拟机：绿色版单 exe 双击即用 |
 
