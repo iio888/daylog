@@ -17,7 +17,8 @@ interface Props {
 
 export default function Write({ active }: Props) {
   const today = useToday();
-  const [entries, setEntries] = useState<Entry[]>([]);
+  // null = 还没拉回来。用 [] 当初值会先闪一下"还没有记录"，再被真实数据顶掉
+  const [entries, setEntries] = useState<Entry[] | null>(null);
   const [entryDate, setEntryDate] = useState(today);
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -147,15 +148,15 @@ export default function Write({ active }: Props) {
 
       <div className="day-head">
         <h3>{isToday ? "今天" : entryDate}</h3>
-        <span className="hint">{entries.length} 条</span>
+        {entries && <span className="hint">{entries.length} 条</span>}
       </div>
-      {entries.length === 0 ? (
+      {entries?.length === 0 && (
         <div className="empty">{isToday ? "今天还没有记录" : "这天还没有记录"}</div>
-      ) : (
-        [...entries]
-          .reverse()
-          .map((e) => <EntryItem key={e.id} entry={e} onChanged={() => void reload()} />)
       )}
+      {entries
+        ?.slice()
+        .reverse()
+        .map((e) => <EntryItem key={e.id} entry={e} onChanged={() => void reload()} />)}
 
       {splitRows && (
         <SplitModal

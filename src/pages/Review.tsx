@@ -23,7 +23,8 @@ export default function Review({ active, focusSearchSignal }: Props) {
   // 年月合并为单个 state：键盘监听只注册一次，必须用函数式更新避免闭包捕获旧值
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 });
   const { y: year, m: month } = ym;
-  const [entries, setEntries] = useState<Entry[]>([]); // 当月数据
+  // 当月数据。null = 还没拉回来，用来区分"这天真没记录"和"还没加载完"
+  const [entries, setEntries] = useState<Entry[] | null>(null);
   const [years, setYears] = useState<number[]>([]);
 
   // 窗口开着跨月时，正看着当月的日历跟到新的一月；已翻到历史月份的不动
@@ -124,7 +125,7 @@ export default function Review({ active, focusSearchSignal }: Props) {
 
   const byDate = useMemo(() => {
     const map = new Map<string, Entry[]>();
-    entries.forEach((e) => {
+    (entries ?? []).forEach((e) => {
       (map.get(e.entry_date) ?? map.set(e.entry_date, []).get(e.entry_date)!).push(e);
     });
     return map;
@@ -295,13 +296,12 @@ export default function Review({ active, focusSearchSignal }: Props) {
               <button className="icon-btn" onClick={() => setPanelDate(null)}>✕</button>
             </header>
             <div className="list">
-              {panelEntries.length === 0 ? (
+              {entries && panelEntries.length === 0 && (
                 <div className="empty">这一天没有记录</div>
-              ) : (
-                panelEntries.map((e) => (
-                  <EntryItem key={e.id} entry={e} onChanged={onDataChanged} />
-                ))
               )}
+              {panelEntries.map((e) => (
+                <EntryItem key={e.id} entry={e} onChanged={onDataChanged} />
+              ))}
             </div>
             <div className="addbox">
               <AcTextarea
