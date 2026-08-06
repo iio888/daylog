@@ -6,6 +6,9 @@ import { parseProject, parseTags } from "./parse";
  * Tauri 环境（Windows 正式运行）→ Rust + SQLite；
  * 纯浏览器环境（vite dev/preview，用于开发预览）→ localStorage mock。
  */
+/** 搜索结果条数上限，与 src-tauri/src/db.rs 的 query() LIMIT 一致；命中上限时 UI 需提示已截断 */
+export const SEARCH_LIMIT = 500;
+
 export interface Backend {
   add(content: string, entryDate: string): Promise<Entry>;
   listRange(start: string, end: string): Promise<Entry[]>;
@@ -220,7 +223,7 @@ function mockBackend(): Backend {
             b.entry_date.localeCompare(a.entry_date) ||
             b.created_at.localeCompare(a.created_at),
         )
-        .slice(0, 500);
+        .slice(0, SEARCH_LIMIT);
     },
     async listYears() {
       return [...new Set(load().map((e) => +e.entry_date.slice(0, 4)))].sort();

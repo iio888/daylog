@@ -178,6 +178,7 @@ main { flex: 1; overflow: auto; display: flex; flex-direction: column; }
 /* 搜索/过滤结果（扁平列表） */
 .flat-result { flex: 1; overflow: auto; padding: 0 20px 20px; }
 .flat-result .sr-day { color: var(--text-dim); font-size: calc(var(--fs) - 2px); margin: 16px 0 6px; }
+.flat-result .sr-truncated { padding: 10px 0 0; }
 .flat-result .entry { cursor: pointer; }
 
 /* 当日详情侧滑面板 */

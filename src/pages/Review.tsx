@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Entry } from "../types";
-import { backend } from "../backend";
+import { SEARCH_LIMIT, backend } from "../backend";
 import { MAX_ENTRY_LEN, PROJ_RE, TAG_RE, pad2, parseProject, parseTags, timeOf } from "../parse";
 import { useDayChange, useToday, ymqOf } from "../useToday";
 import { toast } from "../toast";
@@ -236,6 +236,11 @@ export default function Review({ active, focusSearchSignal }: Props) {
 
       {filtering ? (
         <div className="flat-result">
+          {flatResult?.length === SEARCH_LIMIT && (
+            <div className="hint sr-truncated">
+              匹配结果已达 {SEARCH_LIMIT} 条上限，更早的记录未列出，请缩小检索范围
+            </div>
+          )}
           {flatGroups.length === 0 ? (
             <div className="empty">没有匹配的记录</div>
           ) : (
