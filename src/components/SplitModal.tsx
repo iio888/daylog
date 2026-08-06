@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SplitItem } from "../ai";
 import { todayStr } from "../parse";
 
@@ -19,6 +19,15 @@ function fit(el: HTMLTextAreaElement | null) {
 /** AI 拆分确认弹窗：左原文只读，右结果可调（改日期/编辑/删除/新增）；未识别仅黄色高亮 */
 export default function SplitModal({ source, initial, onCancel, onConfirm }: Props) {
   const [rows, setRows] = useState<SplitItem[]>(initial);
+
+  // Esc 关闭，与设置弹窗、当天详情面板保持一致
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
 
   function patch(i: number, p: Partial<SplitItem>) {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
