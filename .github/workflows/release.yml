@@ -46,6 +46,36 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
+      # Release 正文取自 CHANGELOG.md 里与 tag 同名的那一节。
+      # 只用 bash 内建的字符串操作，不依赖 Windows runner 上有没有 awk / sed。
+      - name: 取出本版更新说明
+        id: notes
+        shell: bash
+        run: |
+          section=""
+          on=0
+          while IFS= read -r line || [ -n "$line" ]; do
+            # 命中 "## v1.2.0 " 开头即进入本节；下一个 "## v" 结束
+            if [ "${line#"## $TAG "}" != "$line" ]; then on=1; continue; fi
+            if [ $on -eq 1 ] && [ "${line#"## v"}" != "$line" ]; then break; fi
+            if [ $on -eq 1 ]; then section+="$line"$'\n'; fi
+          done < CHANGELOG.md
+          if [ -z "${section//[$'\n\r\t ']/}" ]; then
+            echo "::error::CHANGELOG.md 里没有 $TAG 这一节，请先补上再打 tag"
+            exit 1
+          fi
+          {
+            echo "body<<CHANGELOG_EOF"
+            printf '%s' "$section"
+            echo "---"
+            echo
+            echo "自动构建产物："
+            echo
+            echo '- `DayLog_<版本号>_x64-setup.exe`：NSIS 安装包，内置 WebView2 离线组件，全程无需联网。'
+            echo '- `DayLog_portable.exe`：绿色免安装版，放任意文件夹双击即用；在其旁新建 `data` 文件夹可让数据随程序走。'
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       # 编译前端 + Rust，打 NSIS 安装包，创建 Release 并上传安装包
       - name: 打包并发布
         uses: tauri-apps/tauri-action@v0
@@ -54,11 +84,7 @@ jobs:
         with:
           tagName: ${{ env.TAG }}
           releaseName: DayLog ${{ env.TAG }}
-          releaseBody: |
-            自动构建产物：
-
-            - `DayLog_x.x.x_x64-setup.exe`：NSIS 安装包，内置 WebView2 离线组件，全程无需联网。
-            - `DayLog_portable.exe`：绿色免安装版，放任意文件夹双击即用；在其旁新建 `data` 文件夹可让数据随程序走。
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
 

@@ -72,10 +72,18 @@ npm run tauri icon src-tauri/icon-source.png
 的写法），`vite.config.ts` 也把 `package.json` 的版本号注入成 `__APP_VERSION__`
 供「关于」面板显示。所以：
 
-1. 只改 `package.json` 的 `version` 一处。
+1. 只改 `package.json` 的 `version` 一处（用 `npm version <x.y.z> --no-git-tag-version`
+   顺带把 `package-lock.json` 一起改掉）。
 2. `npm run tauri build` 产出的安装包文件名、exe 的文件属性、设置页「关于」
    显示的版本号都会自动跟上。
-3. 打 tag 时与 `package.json` 保持一致（`git tag v1.2.0`）。
+3. **在 `CHANGELOG.md` 顶部补上本版一节**，标题格式为 `## v<版本号> — <日期>`。
+   `release.yml` 会取出与 tag 同名的那一节作为 Release 页面正文；**找不到就直接
+   让流水线失败**，避免发出一个没有更新说明的版本。
+4. 打 tag 时与 `package.json` 保持一致（`git tag -a v1.2.0`），推 tag 触发发布。
+
+`src-tauri/Cargo.toml` 里的 `version` 是 Rust crate 自己的版本号，不参与上面
+任何一环（应用版本号以 `tauri.conf.json` → `package.json` 为准），目前留在
+1.1.0 没跟。要不要让它一起动是独立的一次决定。
 
 以前 `package.json` 与 `tauri.conf.json` 各写死一份版本号，「关于」面板里
 还硬编码着第三份——发到 v1.1.0 时那里仍写着 v0.1.0。
