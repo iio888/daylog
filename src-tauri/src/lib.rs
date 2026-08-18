@@ -35,6 +35,24 @@ fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// reqwest 的 Display 只有一句「error sending request for url (…)」，真正的原因
+/// ——DNS 解析失败、证书不受信任、代理拒绝、连接超时——全藏在 source 链里。
+/// 不摊开就等于把唯一有用的信息丢掉，用户只能拿着「无法连接」四个字瞎猜。
+fn err_chain<E: std::error::Error>(e: E) -> String {
+    let mut out = e.to_string();
+    let mut src = e.source();
+    while let Some(c) = src {
+        let s = c.to_string();
+        // 上层有时已经把下层信息带上了，重复的不再追加
+        if !out.contains(&s) {
+            out.push('：');
+            out.push_str(&s);
+        }
+        src = c.source();
+    }
+    out
+}
+
 #[tauri::command]
 fn add_entry(
     state: State<Db>,
@@ -379,7 +397,7 @@ async fn ai_chat(
         let resp = req
             .send()
             .await
-            .map_err(|e| format!("无法连接 AI 服务（{base}）：{e}"))?;
+            .map_err(|e| format!("无法连接 AI 服务（{base}）：{}", err_chain(e)))?;
         let status = resp.status();
         let text = resp.text().await.map_err(err)?;
         if !status.is_success() {
@@ -427,7 +445,7 @@ async fn ai_models(base_url: String, api_key: Option<String>) -> CmdResult<Vec<S
     let resp = req
         .send()
         .await
-        .map_err(|e| format!("无法连接 AI 服务（{base}）：{e}"))?;
+        .map_err(|e| format!("无法连接 AI 服务（{base}）：{}", err_chain(e)))?;
     let status = resp.status();
     let text = resp.text().await.map_err(err)?;
     if !status.is_success() {
@@ -523,6 +541,51 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 造一个「外层信息含糊、内层才是真原因」的错误链，模拟 reqwest 的形状
+    #[derive(Debug)]
+    struct FakeErr(&'static str, Option<Box<FakeErr>>);
+    impl std::fmt::Display for FakeErr {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.0)
+        }
+    }
+    impl std::error::Error for FakeErr {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            self.1.as_deref().map(|e| e as &(dyn std::error::Error + 'static))
+        }
+    }
+
+    #[test]
+    fn err_chain_surfaces_the_real_cause() {
+        // reqwest 只会 Display 最外层，证书/DNS 这类真原因全在 source 链里
+        let e = FakeErr(
+            "error sending request for url (https://api.example.com/v1/chat/completions)",
+            Some(Box::new(FakeErr(
+                "invalid peer certificate",
+                Some(Box::new(FakeErr("UnknownIssuer", None))),
+            ))),
+        );
+        assert_eq!(
+            err_chain(e),
+            "error sending request for url (https://api.example.com/v1/chat/completions)：invalid peer certificate：UnknownIssuer"
+        );
+    }
+
+    #[test]
+    fn err_chain_skips_causes_already_quoted_upstream() {
+        // 有些库的外层已经把下层原因带上了，不该再重复一遍
+        let e = FakeErr(
+            "connect error: connection refused",
+            Some(Box::new(FakeErr("connection refused", None))),
+        );
+        assert_eq!(err_chain(e), "connect error: connection refused");
+    }
+
+    #[test]
+    fn err_chain_on_a_bare_error_is_just_its_message() {
+        assert_eq!(err_chain(FakeErr("operation timed out", None)), "operation timed out");
+    }
 
     /// 每个用例一个独立的临时数据目录，互不干扰
     fn tmp_dirs(tag: &str) -> Dirs {
