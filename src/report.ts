@@ -483,6 +483,9 @@ export function wrapHtml(title: string, bodyHtml: string): string {
   li { margin: 4px 0; }
   blockquote { margin: 12px 0; padding: 6px 12px; border-left: 3px solid #e4e7ee; color: #6b7280; }
   em { color: #6b7280; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+  th, td { border: 1px solid #e4e7ee; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f6f7f9; font-weight: 600; }
   @media print { body { margin: 0 auto; } }
 </style>
 </head>

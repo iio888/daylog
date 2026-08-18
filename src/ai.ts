@@ -5,6 +5,7 @@ import { timeOf, todayStr } from "./parse";
 import type { Entry } from "./types";
 import type { MdOutline, Range, WorkItem, WorkSection, WorkSummary } from "./report";
 import { normHeading, rangeLabel, sanitizeParagraph } from "./report";
+import { fillSeqColumn, normalizeRows } from "./xlsx";
 
 /** 容错解析模型输出的 JSON：剥代码块围栏，截取首尾括号之间的部分。 */
 function parseAiJson<T>(raw: string, open: "{" | "["): T {
@@ -450,6 +451,53 @@ export async function aiFillDocxTemplate(
     : [];
   if (sections.length === 0) throw new Error("AI 未返回任何章节内容，请重试");
   return { title: typeof obj.title === "string" ? obj.title : undefined, sections };
+}
+
+/* ---------------- Excel 盘点表填充 ---------------- */
+
+/** 一张盘点表最多这么多行，同样是输出长度的超时控制 */
+const MAX_XLSX_ROWS = 30;
+
+const XLSX_FILL_SYSTEM = (typeLabel: string, range: string, columns: string[], instructions: string) =>
+  `你是工作盘点填表助手，需要把用户的工作记录填进一张「${typeLabel}」表格（时间范围：${range}）。
+表格的列名按顺序如下（共 ${columns.length} 列）：
+${columns.map((c, i) => `${i + 1}. ${c || "（无列名）"}`).join("\n")}
+只输出一个 JSON 对象，不要任何解释或代码块标记，结构：
+{"rows":[["第1列","第2列","…"]]}
+规则：
+1. 每行是一件可以独立汇报的工作。同一件工作跨多天、跨多条记录、用词不同的，必须合并成一行，不要按天逐条罗列，不要一条记录一行。
+2. 每个内层数组长度必须等于 ${columns.length}，顺序与上面的列名一致。
+3. 按列名的语义决定该列写什么。列名要的信息记录里没有的（例如工时、完成率、编码、责任人），一律填空字符串——**禁止编造**。
+4. 序号一类的列填空字符串，由程序统一编号。
+5. 数字只能引用记录中出现过的数字；没有量化数据就不写量化，禁止编造数量、比例、耗时、金额、完成率。日期只能用记录中出现过的日期。禁止编造人名、系统名、部门和结论。
+6. 描述一类的列写成一段连贯的话，60~180 字，不使用列表符号、不换行、不加粗。
+7. 最多 ${MAX_XLSX_ROWS} 行，优先写重点与难点工作。
+8. 全部使用中文。${instructions ? `\n\n模板自带的填写说明（必须遵守）：\n${instructions}` : ""}`;
+
+/**
+ * 按表头语义把记录填成表格行。返回的是「行 × 列」字符串矩阵，长度已对齐列数。
+ * 序号列不在这里填——见 xlsx.ts 的 fillSeqColumn。
+ */
+export async function aiFillXlsxTemplate(
+  outline: import("./xlsx").XlsxOutline,
+  entries: Entry[],
+  typeLabel: string,
+  range: Range,
+): Promise<{ rows: string[][]; notes: string[] }> {
+  const { recs, notes } = numberRecords(entries);
+  let facts = recs.map((r) => r.text).join("\n");
+  if (facts.length > MAX_INPUT_CHARS) {
+    facts = facts.slice(0, MAX_INPUT_CHARS);
+    notes.push("记录过长，本次填表基于截断后的内容");
+  }
+  const raw = await callJson<{ rows?: unknown }>(
+    XLSX_FILL_SYSTEM(typeLabel, rangeLabel(range), outline.columns, outline.instructions),
+    `工作记录：\n${facts}`,
+    "{",
+  );
+  const rows = normalizeRows(raw.rows, outline.columns.length, MAX_XLSX_ROWS);
+  if (rows.length === 0) throw new Error("AI 未填出任何工作事项，请重试");
+  return { rows: fillSeqColumn(outline.columns, rows), notes };
 }
 
 /** 设置页「测试连接」：仅凭 Base URL + Key 探活，成功后返回端点可用模型列表 */

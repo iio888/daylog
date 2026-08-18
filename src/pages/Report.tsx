@@ -5,12 +5,13 @@ import { timeOf } from "../parse";
 import { useDayChange, useToday, useYearOptions, ymqOf } from "../useToday";
 import { toast } from "../toast";
 import { aiConfigured, loadSettings } from "../settings";
-import { aiFillDocxTemplate, aiWorkSummary, isCancelled } from "../ai";
+import { aiFillDocxTemplate, aiFillXlsxTemplate, aiWorkSummary, isCancelled } from "../ai";
 import { copyText } from "../copy";
 import {
   BUILTIN_TEMPLATES,
   REPORT_TYPE_LABEL,
   docxTemplate,
+  xlsxTemplate,
   parseTemplate,
   type ReportType,
   type Template,
@@ -26,6 +27,12 @@ import {
   wrapHtml,
 } from "../report";
 import ReportHistoryModal from "../components/ReportHistoryModal";
+import {
+  directFillXlsx,
+  fillXlsxTemplate,
+  parseXlsxTemplate,
+  xlsxToMarkdown,
+} from "../xlsx";
 import {
   directFill,
   docxFilledToMarkdown,
@@ -76,8 +83,8 @@ export default function Report({ active }: Props) {
   const [tplFile, setTplFile] = useState("");
   const [years, setYears] = useState<number[]>([]);
   const [md, setMd] = useState("");
-  // 当前生成结果若来自 Word 模板，保留其 .docx 字节（导出用；md 为屏幕预览）
-  const [docxBytes, setDocxBytes] = useState<Uint8Array | null>(null);
+  // 当前结果若来自 Word / Excel 模板，保留其二进制字节（导出用；md 为屏幕预览）
+  const [binOut, setBinOut] = useState<{ ext: "docx" | "xlsx"; bytes: Uint8Array } | null>(null);
   const [exportDir, setExportDirState] = useState("");
   const [tab, setTab] = useState<"render" | "src">("render");
   const [busy, setBusy] = useState(false);
@@ -105,13 +112,15 @@ export default function Report({ active }: Props) {
 
   const reloadTemplates = useCallback(async () => {
     await backend.ensureTemplatesSeeded(BUILTIN_TEMPLATES);
-    const [raw, docxNames] = await Promise.all([
+    const [raw, docxNames, xlsxNames] = await Promise.all([
       backend.listTemplates(),
       backend.listDocxTemplates(),
+      backend.listXlsxTemplates(),
     ]);
     setTemplates([
       ...raw.map(([f, c]) => parseTemplate(f, c)),
       ...docxNames.map((f) => docxTemplate(f)),
+      ...xlsxNames.map((f) => xlsxTemplate(f)),
     ]);
   }, []);
 
@@ -130,9 +139,9 @@ export default function Report({ active }: Props) {
   );
   const broken = useMemo(() => templates.filter((t) => t.error), [templates]);
 
-  // 切换模板时丢弃上一次生成的 .docx，避免「导出 .docx」误用旧结果
+  // 切换模板时丢弃上一次生成的二进制结果，避免「导出」误用旧文件
   useEffect(() => {
-    setDocxBytes(null);
+    setBinOut(null);
   }, [tplFile]);
 
   useEffect(() => {
@@ -151,10 +160,11 @@ export default function Report({ active }: Props) {
       return;
     }
     if (tpl.kind === "docx") return generateDocx(tpl, mode);
+    if (tpl.kind === "xlsx") return generateXlsx(tpl, mode);
     setBusy(true);
     setAiError(null);
     try {
-      setDocxBytes(null);
+      setBinOut(null);
       const entries = await backend.listRange(range.start, range.end);
       let result: string;
       if (mode === "ai") {
@@ -214,6 +224,65 @@ export default function Report({ active }: Props) {
     }
   }
 
+  /** Excel 模板生成：解析表头与填写说明 → AI/直接填表 → 回写为 .xlsx 字节（+ 屏幕预览 md） */
+  async function generateXlsx(tpl: Template, mode: "direct" | "ai") {
+    setBusy(true);
+    setAiError(null);
+    try {
+      const entries = await backend.listRange(range.start, range.end);
+      const bytes = await backend.readTemplateBytes(tpl.filename);
+      const template = await parseXlsxTemplate(bytes);
+
+      let rows: string[][];
+      let notes: string[] = [];
+      if (mode === "ai") {
+        if (entries.length === 0) {
+          toast("该范围没有记录，无需 AI 填表");
+          setBusy(false);
+          return;
+        }
+        try {
+          const r = await aiFillXlsxTemplate(
+            template.outline,
+            entries,
+            REPORT_TYPE_LABEL[type],
+            range,
+          );
+          rows = r.rows;
+          notes = r.notes;
+        } catch (e) {
+          setAiError(e instanceof Error ? e.message : String(e));
+          setBusy(false);
+          return;
+        }
+      } else {
+        rows = directFillXlsx(template.outline, entries);
+      }
+
+      const out = await fillXlsxTemplate(template, rows);
+      const title = `${rangeLabel(range)} ${REPORT_TYPE_LABEL[type]}`;
+      // 截断之类的如实注明，跟着预览一起走，不靠一闪而过的 toast
+      const previewMd =
+        xlsxToMarkdown(title, template.outline, rows) +
+        (notes.length ? `\n${notes.map((n) => `> 注：${n}。`).join("\n")}\n` : "");
+      setBinOut({ ext: "xlsx", bytes: out });
+      setMd(previewMd);
+      setTab("render");
+      void backend
+        .saveReport(type, range.start, range.end, tpl.name, previewMd)
+        .catch(() => undefined);
+      toast(
+        mode === "ai"
+          ? `已生成 Excel 盘点表（AI 填表，${rows.length} 行 / 基于 ${entries.length} 条记录）`
+          : `已生成 Excel 盘点表（${rows.length} 行）`,
+      );
+    } catch (e) {
+      toast(`生成失败：${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** Word 模板生成：解析 .docx 骨架 → AI/直接填充 → 回写为 .docx 字节（+ 屏幕预览 md） */
   async function generateDocx(tpl: Template, mode: "direct" | "ai") {
     setBusy(true);
@@ -251,7 +320,7 @@ export default function Report({ active }: Props) {
         (template.warnings.length
           ? `${template.warnings.map((w) => `> ⚠ 模板限制：${w}`).join("\n>\n")}\n\n`
           : "") + docxFilledToMarkdown(template.outline, filled);
-      setDocxBytes(out);
+      setBinOut({ ext: "docx", bytes: out });
       setMd(previewMd);
       setTab("render");
       void backend
@@ -273,10 +342,10 @@ export default function Report({ active }: Props) {
     return `${exportBaseName(type, range)}.${ext}`;
   }
 
-  async function doExportDocx() {
-    if (!docxBytes) return toast("请先生成报告");
+  async function doExportBin() {
+    if (!binOut) return toast("请先生成报告");
     try {
-      const path = await backend.exportBytes(exportName("docx"), docxBytes);
+      const path = await backend.exportBytes(exportName(binOut.ext), binOut.bytes);
       toast(path ? `已导出：${path}` : "已开始下载");
     } catch (e) {
       toast(`导出失败：${e instanceof Error ? e.message : e}`);
@@ -352,6 +421,20 @@ export default function Report({ active }: Props) {
 
   async function onImportFile(file: File) {
     try {
+      if (file.name.toLowerCase().endsWith(".xlsx")) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        // 先解析一遍：表头认不出来的话，现在就得让他知道，而不是生成时才报错
+        const outline = (await parseXlsxTemplate(bytes)).outline;
+        await backend.saveTemplateBytes(file.name, bytes);
+        await reloadTemplates();
+        setTplFile(file.name);
+        toast(
+          `已导入 Excel 模板：${file.name.replace(/\.xlsx$/i, "")}（识别到 ${
+            outline.columns.filter(Boolean).length
+          } 个表头列）`,
+        );
+        return;
+      }
       if (file.name.toLowerCase().endsWith(".docx")) {
         const bytes = new Uint8Array(await file.arrayBuffer());
         await backend.saveTemplateBytes(file.name, bytes);
@@ -442,7 +525,7 @@ export default function Report({ active }: Props) {
           <select value={tplFile} onChange={(e) => onPickTemplate(e.target.value)}>
             {usable.map((t) => (
               <option key={t.filename} value={t.filename}>
-                {t.kind === "docx" ? `${t.name}（Word）` : t.name}
+                {t.kind === "docx" ? `${t.name}（Word）` : t.kind === "xlsx" ? `${t.name}（Excel）` : t.name}
               </option>
             ))}
             {broken.map((t) => (
@@ -455,7 +538,7 @@ export default function Report({ active }: Props) {
           <input
             ref={fileRef}
             type="file"
-            accept=".md,.markdown,.txt,.docx"
+            accept=".md,.markdown,.txt,.docx,.xlsx"
             style={{ display: "none" }}
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -543,8 +626,10 @@ export default function Report({ active }: Props) {
           <div className="grow" />
           <button className="btn-ghost" onClick={() => void doCopy("md")}>复制 Markdown</button>
           <button className="btn-ghost" onClick={() => void doCopy("plain")}>复制纯文本</button>
-          {docxBytes && (
-            <button className="btn-ghost" onClick={() => void doExportDocx()}>导出 .docx</button>
+          {binOut && (
+            <button className="btn-ghost" onClick={() => void doExportBin()}>
+              导出 .{binOut.ext}
+            </button>
           )}
           <button className="btn-ghost" onClick={() => void doExport("md")}>导出 .md</button>
           <button className="btn-ghost" onClick={() => void doExport("html")}>导出 .html</button>
@@ -558,7 +643,7 @@ export default function Report({ active }: Props) {
           onLoad={(r) => {
             setMd(r.content);
             setTab("render");
-            setDocxBytes(null); // 历史里没存 .docx 字节，别让「导出 .docx」误用上一次的
+            setBinOut(null); // 历史里没存 .docx 字节，别让「导出 .docx」误用上一次的
             setHistoryOpen(false);
             toast(`已载入 ${r.created_at.slice(5, 10)} 生成的报告`);
           }}

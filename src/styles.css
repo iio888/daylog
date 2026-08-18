@@ -266,6 +266,11 @@ main { flex: 1; overflow: auto; display: flex; flex-direction: column; }
   margin: 10px 0; padding: 6px 12px; border-left: 3px solid var(--border);
   color: var(--text-dim); font-size: calc(var(--fs) - 1px);
 }
+.md-render table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: calc(var(--fs) - 1px); }
+.md-render th, .md-render td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.md-render th { background: var(--bg); font-weight: 600; }
+/* 表格可能很宽，让它自己横向滚动，不要把整页顶宽 */
+.preview-body { overflow-x: auto; }
 .md-render em { color: var(--text-dim); font-size: calc(var(--fs) - 2px); font-style: normal; }
 .md-render ul { padding-left: 20px; }
 .md-render li { margin: 5px 0; }

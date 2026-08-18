@@ -45,6 +45,8 @@ export interface Backend {
   /* ---- Word 模板（二进制） ---- */
   /** 列出模板目录下的 .docx 文件名 */
   listDocxTemplates(): Promise<string[]>;
+  /** 模板目录里的 .xlsx 文件名 */
+  listXlsxTemplates(): Promise<string[]>;
   /** 读取模板目录下某文件的二进制内容 */
   readTemplateBytes(filename: string): Promise<Uint8Array>;
   /** 保存二进制模板（导入 .docx 用） */
@@ -134,6 +136,7 @@ function tauriBackend(): Backend {
     saveTemplate: (filename, content) => call("save_template", { filename, content }),
     exportFile: (filename, content) => call("export_report", { filename, content }),
     listDocxTemplates: () => call("list_docx_templates"),
+    listXlsxTemplates: () => call("list_xlsx_templates"),
     readTemplateBytes: async (filename) =>
       b64ToBytes(await call<string>("read_template_bytes", { filename })),
     saveTemplateBytes: (filename, bytes) =>
@@ -298,10 +301,10 @@ function mockBackend(): Backend {
       return null; // 浏览器下载，无本地路径
     },
     async listDocxTemplates() {
-      const map: Record<string, string> = JSON.parse(
-        localStorage.getItem("daylog-docx-templates") ?? "{}",
-      );
-      return Object.keys(map).sort();
+      return binTemplateNames(".docx");
+    },
+    async listXlsxTemplates() {
+      return binTemplateNames(".xlsx");
     },
     async readTemplateBytes(filename) {
       const map: Record<string, string> = JSON.parse(
@@ -320,7 +323,9 @@ function mockBackend(): Backend {
     },
     async exportBytes(filename, bytes) {
       const blob = new Blob([bytes as BlobPart], {
-        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        type: /\.xlsx$/i.test(filename)
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -384,6 +389,7 @@ function mockBackend(): Backend {
       // 预览模式没有真模型：按提示词意图给出可验收的模拟响应
       await new Promise((r) => setTimeout(r, 500));
       // 这两条必须排在最前：撰写助手的提示词里含「总结」，会被下面的分支抢走
+      if (system.includes("工作盘点填表助手")) return JSON.stringify(mockXlsxFill(system, user));
       if (system.includes("工作项提取助手")) return JSON.stringify(mockExtract(user));
       if (system.includes("工作总结撰写助手")) return JSON.stringify(mockWorkSummary(user));
       if (system.includes("拆分")) return JSON.stringify(mockSplit(user));
@@ -404,6 +410,35 @@ function mockBackend(): Backend {
       return fresh.length;
     },
   };
+}
+
+/** 预览模式的 Excel 盘点表填充。列名从提示词里回读，按语义粗填，填不出的留空。 */
+function mockXlsxFill(system: string, user: string): unknown {
+  const cols = [...system.matchAll(/^\d+\. (.*)$/gm)].map((m) => m[1].trim());
+  const groups = mockGroups(user);
+  const rows = groups.slice(0, 10).map((g) =>
+    cols.map((c) => {
+      if (/序号|编号|行号|no\.?|#/i.test(c)) return "";
+      if (/维度|类型|类别/.test(c)) return "工作事项";
+      if (/描述|详情|说明|内容/.test(c)) {
+        return `（预览模式模拟）依据 ${g.recs.length} 条记录归纳，桌面版接真实模型后此处为正式行文。`;
+      }
+      if (/名称|事项|标题/.test(c)) return g.recs[0].text.replace(/[@#]\S+\s*/g, "").slice(0, 12);
+      if (/项目/.test(c)) return /编码|代码|code/i.test(c) ? "" : g.project;
+      return "";
+    }),
+  );
+  return { rows };
+}
+
+/** 预览模式下 .docx / .xlsx 共用一个 localStorage 映射，按后缀分流 */
+function binTemplateNames(ext: string): string[] {
+  const map: Record<string, string> = JSON.parse(
+    localStorage.getItem("daylog-docx-templates") ?? "{}",
+  );
+  return Object.keys(map)
+    .filter((n) => n.toLowerCase().endsWith(ext))
+    .sort();
 }
 
 /** 预览模式的 Word 模板填充（模拟 AI 返回；桌面版由真实模型完成） */

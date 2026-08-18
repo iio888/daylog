@@ -211,12 +211,22 @@ fn export_report(dirs: State<Dirs>, filename: String, content: String) -> CmdRes
 /// 列出模板目录下的 .docx 文件名
 #[tauri::command]
 fn list_docx_templates(dirs: State<Dirs>) -> CmdResult<Vec<String>> {
+    list_templates_by_ext(&dirs, ".docx")
+}
+
+/// 模板目录下的 .xlsx 文件名（Excel 盘点表模板）
+#[tauri::command]
+fn list_xlsx_templates(dirs: State<Dirs>) -> CmdResult<Vec<String>> {
+    list_templates_by_ext(&dirs, ".xlsx")
+}
+
+fn list_templates_by_ext(dirs: &Dirs, ext: &str) -> CmdResult<Vec<String>> {
     let dir = dirs.data.join("templates");
     std::fs::create_dir_all(&dir).map_err(err)?;
     let mut out = Vec::new();
     for e in std::fs::read_dir(&dir).map_err(err)? {
         let name = e.map_err(err)?.file_name().to_string_lossy().to_string();
-        if name.to_lowercase().ends_with(".docx") {
+        if name.to_lowercase().ends_with(ext) {
             out.push(name);
         }
     }
@@ -517,6 +527,7 @@ pub fn run() {
             save_template,
             export_report,
             list_docx_templates,
+            list_xlsx_templates,
             read_template_bytes,
             save_template_bytes,
             export_report_bytes,

@@ -16,9 +16,9 @@ export interface Template {
   name: string;
   /** 适用报告类型；any = 全部 */
   type: ReportType | "any";
-  /** 模板形态：md = 占位符 Markdown；docx = Word 骨架（样式+结构） */
-  kind: "md" | "docx";
-  /** 去掉 frontmatter 后的正文（docx 模板为空，正文在 .docx 文件中） */
+  /** 模板形态：md = 占位符 Markdown；docx = Word 骨架；xlsx = Excel 盘点表 */
+  kind: "md" | "docx" | "xlsx";
+  /** 去掉 frontmatter 后的正文（docx / xlsx 模板为空，正文在二进制文件里） */
   body: string;
   /** 解析失败原因（下拉中标灰） */
   error?: string;
@@ -50,6 +50,11 @@ export function parseTemplate(filename: string, raw: string): Template {
 /** Word 模板项：无 frontmatter，name 取文件名，适用全部报告类型 */
 export function docxTemplate(filename: string): Template {
   return { filename, name: filename.replace(/\.docx$/i, ""), type: "any", kind: "docx", body: "" };
+}
+
+/** Excel 模板项：无 frontmatter，name 取文件名，适用全部报告类型 */
+export function xlsxTemplate(filename: string): Template {
+  return { filename, name: filename.replace(/\.xlsx$/i, ""), type: "any", kind: "xlsx", body: "" };
 }
 
 /** 内置模板：首次启动播种到模板目录，用户可改可删（删后不自动恢复） */
